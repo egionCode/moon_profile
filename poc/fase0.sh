@@ -45,7 +45,7 @@ APP_NAME="SteamGame"               # nome fixo do app no Apollo, reaproveitado a
 
 TARGET_OUTPUT="HDMI-A-1"           # saida a ativar (TV dockada)
 RESTORE_OUTPUT="DP-3"              # saida a restaurar no undo (ex: eDP interno via dock)
-RESOLUTION="3840x2160"
+RESOLUTION="1920x1080"
 FPS="60"
 HDR="true"                         # "true" ou "false"
 
@@ -80,40 +80,56 @@ login() {
     log "login ok, cookie de sessao obtido"
 }
 
-# Corpo (sem o wrapper "bash -c '...'") do prep-cmd "do": ativa output alvo,
-# aplica modo, HDR, desliga o resto. Usa aspas DUPLAS pros literais porque o
-# corpo inteiro e embrulhado em aspas simples mais abaixo (build_do_cmd) -
-# aspas simples aninhadas aqui quebrariam esse wrapper.
-build_do_body() {
-    local cmd="kscreen-doctor output.${TARGET_OUTPUT}.enable"
-    cmd+=" ; kscreen-doctor output.${TARGET_OUTPUT}.mode.${RESOLUTION}@${FPS}"
-    if [[ "${HDR}" == "true" ]]; then
-        cmd+=" ; kscreen-doctor output.${TARGET_OUTPUT}.hdr.enable"
-        cmd+=" ; kscreen-doctor output.${TARGET_OUTPUT}.wcg.enable"
-    fi
-    cmd+=" ; kscreen-doctor output.${RESTORE_OUTPUT}.disable"
-    printf '%s' "${cmd}"
-}
+# Monta o array "prep-cmd" inteiro como passos SEPARADOS (sem bash -c, sem
+# aspas). O Apollo executa cada "do" na ordem do array e cada "undo" na ORDEM
+# REVERSA (confirmado em proc_t::terminate() no process.cpp: percorre de
+# tras pra frente). Isso permite ordenar do/undo de forma independente sem
+# nenhum comando composto.
+#
+# Motivo de nao usar "bash -c '...; ...; ...'" como antes: o Apollo spawna
+# comandos via Boost.Process com uma string unica, que e' dividida SO por
+# espaco em branco - aspas nao viram agrupamento (bug conhecido da lib,
+# https://github.com/klemens-morgenstern/boost-process/issues/128). Isso
+# quebrava "bash -c '<script>'" em varios argv soltos; bash -c so pega o
+# primeiro pedaco (uma aspa aberta sem fechar) e morre com erro de sintaxe
+# (exit code 2) - era esse o erro real, nao permissao nem ambiente.
+#
+# Cada comando abaixo e' uma unica invocacao com args separados por espaco
+# (sem aspas, sem ";"), que e' exatamente como Boost.Process consegue
+# executar sem ambiguidade - o mesmo padrao ja comprovado nos scripts
+# apollo-deck-start.sh/apollo-desktop-start.sh deste host.
+#
+# pkill sem match so retorna exit 1 sem imprimir nada (nao precisa mais do
+# "2>/dev/null" que exigia shell); o loop de undo do Apollo so loga um
+# warning em cmd com erro e CONTINUA pro proximo passo (confirmado em
+# terminate(): "if (ret != 0) { BOOST_LOG(warning)... }", sem abortar) -
+# preserva o mesmo comportamento tolerante a falha que o ";" garantia antes.
+build_prep_cmd_json() {
+    local hdr_state="disable"
+    [[ "${HDR}" == "true" ]] && hdr_state="enable"
 
-# Corpo do prep-cmd "undo": mata o jogo pelo AppId (soft depois hard kill),
-# fecha o Big Picture e restaura os outputs originais. AppId= usa aspas
-# DUPLAS pelo mesmo motivo do build_do_body.
-# ";" no lugar de "&&" e intencional: se o pkill falhar (jogo ja fechou),
-# a cadeia continua e os outputs sao restaurados de qualquer forma.
-build_undo_body() {
-    local cmd="pkill -TERM -f \"AppId=${APPID}\""
-    cmd+=" ; sleep 5"
-    cmd+=" ; pkill -KILL -f \"AppId=${APPID}\" 2>/dev/null"
-    cmd+=" ; setsid steam steam://close/bigpicture"
-    cmd+=" ; sleep 2"
-    cmd+=" ; kscreen-doctor output.${RESTORE_OUTPUT}.enable"
-    cmd+=" ; sleep 1"
-    cmd+=" ; kscreen-doctor output.${TARGET_OUTPUT}.disable"
-    printf '%s' "${cmd}"
+    jq -n \
+        --arg target "${TARGET_OUTPUT}" \
+        --arg restore "${RESTORE_OUTPUT}" \
+        --arg resolution "${RESOLUTION}" \
+        --arg fps "${FPS}" \
+        --arg hdr_state "${hdr_state}" \
+        --arg appid "${APPID}" \
+        '[
+            { do: "kscreen-doctor output.\($target).enable",
+              undo: "kscreen-doctor output.\($target).disable" },
+            { do: "kscreen-doctor output.\($target).mode.\($resolution)@\($fps)",
+              undo: "sleep 1" },
+            { do: "kscreen-doctor output.\($target).hdr.\($hdr_state) output.\($target).wcg.\($hdr_state)",
+              undo: "kscreen-doctor output.\($restore).enable" },
+            { do: "kscreen-doctor output.\($restore).disable",
+              undo: "sleep 2" },
+            { do: "", undo: "setsid steam steam://close/bigpicture" },
+            { do: "", undo: "pkill -KILL -f AppId=\($appid)" },
+            { do: "", undo: "sleep 5" },
+            { do: "", undo: "pkill -TERM -f AppId=\($appid)" }
+        ]'
 }
-
-build_do_cmd() { printf "bash -c '%s'" "$(build_do_body)"; }
-build_undo_cmd() { printf "bash -c '%s'" "$(build_undo_body)"; }
 
 # Faz a chamada e VERIFICA o status HTTP. curl so falha (exit != 0) em erro de
 # rede/TLS, nao em 401/403/500 - por isso um 401 passava batido e o script
@@ -179,16 +195,12 @@ cmd_apply() {
     uuid=$(find_app_uuid || true)
     log "atualizando app '${APP_NAME}' (uuid=${uuid:-<novo>}) com AppID=${APPID}"
 
-    local do_cmd undo_cmd payload
-    do_cmd=$(build_do_cmd)
-    undo_cmd=$(build_undo_cmd)
-
+    local payload
     payload=$(jq -n \
         --arg name "${APP_NAME}" \
         --arg cmd "steam steam://rungameid/${APPID}" \
         --arg uuid "${uuid}" \
-        --arg do "${do_cmd}" \
-        --arg undo "${undo_cmd}" \
+        --argjson prepcmd "$(build_prep_cmd_json)" \
         --arg output "/tmp/apollo-steamgame-${APPID}.log" \
         '{
             name: $name,
@@ -199,7 +211,7 @@ cmd_apply() {
             "exit-timeout": 5,
             "exclude-global-prep-cmd": false,
             elevated: false,
-            "prep-cmd": [{ do: $do, undo: $undo }],
+            "prep-cmd": $prepcmd,
             output: $output
         }')
 
@@ -222,9 +234,9 @@ cmd_undo() {
     # saidas de video da GPU do host, e o pkill -f "AppId=..." tem que mirar
     # o processo do Steam do host, nao o do Deck. Executar aqui por engano
     # mataria o processo errado ou simplesmente falharia silenciosamente.
-    log "ATENCAO: cole o comando abaixo via SSH no HOST, nao rode no Deck"
-    build_undo_body
-    echo
+    log "ATENCAO: cole os comandos abaixo via SSH no HOST, na ordem, nao rode no Deck"
+    log "(e' a ordem REVERSA do array prep-cmd - assim que o Apollo executa o undo)"
+    build_prep_cmd_json | jq -r '[.[] | select(.undo != "")] | reverse | .[] | .undo'
 }
 
 case "${1:-}" in

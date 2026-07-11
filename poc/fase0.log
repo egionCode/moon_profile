@@ -1295,3 +1295,123 @@ libva info: va_openDriver() returns 0
 00:00:05 - Qt Info: Processing new PC at "192.168.1.6:47989" from mDNS with IPv6 address "[2804:d59:868f:a500:7148:8496:ba06:e176]:47989"
 00:00:05 - Qt Info: Executing request: "http://192.168.1.6:47989/serverinfo?uniqueid=0123456789ABCDEF&uuid=f3bbed6b0c6f4365b0a9bbe153f3abcc"
 00:00:05 - Qt Info: Executing request: "https://192.168.1.6:47984/serverinfo?uniqueid=0123456789ABCDEF&uuid=8bf09ccfa1754be79994819abd9803c1"
+[fase0][2026-07-11 14:49:32] POST /api/login -> HTTP 200
+[fase0][2026-07-11 14:49:32] login ok, cookie de sessao obtido
+[fase0][2026-07-11 14:49:32] GET /api/apps -> HTTP 200: {"apps":[{"allow-client-commands":false,"auto-detach":false,"cmd":"","elevated":false,"exclude-global-prep-cmd":false,"exclude-global-state-cmd":false,"exit-timeout":5,"gamepad":"","image-path":"desktop.png","name":"Desktop","output":"","per-client-app-identity":false,"prep-cmd":[{"do":"/home/egion/scripts/apollo-desktop-start.sh","undo":"/home/egion/scripts/apollo-deck-end.sh"}],"scale-factor":100,"state-cmd":[],"terminate-on-pause":true,"use-app-identity":false,"uuid":"54C1180A-EF68-B009-1913-C511E9229C54","virtual-display":false,"wait-all":false},{"allow-client-commands":true,"auto-detach":false,"cmd":"","elevated":false,"exclude-global-prep-cmd":false,"exclude-global-state-cmd":false,"exit-timeout":5,"gamepad":"","image-path":"/home/egion/Imagens/steam-deck-cover.png","name":"deck","output":"","per-client-app-identity":false,"prep-cmd":[{"do":"/home/egion/scripts/apollo-deck-start.sh","undo":"/home/egion/scripts/apollo-deck-end.sh"}],"scale-factor":100,"state-cmd":[],"terminate-on-pause":true,"use-app-identity":false,"uuid":"99DF5019-EDBF-1229-9612-8F28D67B89BD","virtual-display":false,"wait-all":false},{"auto-detach":true,"cmd":"steam steam://rungameid/2050650","elevated":false,"exclude-global-prep-cmd":false,"exit-timeout":5,"name":"SteamGame","output":"/tmp/apollo-steamgame-2050650.log","prep-cmd":[{"do":"bash -c 'kscreen-doctor output.HDMI-A-1.enable ; kscreen-doctor output.HDMI-A-1.mode.3840x2160@60 ; kscreen-doctor output.HDMI-A-1.hdr.enable ; kscreen-doctor output.HDMI-A-1.wcg.enable ; kscreen-doctor output.DP-3.disable'","undo":"bash -c 'pkill -TERM -f \"AppId=2050650\" ; sleep 5 ; pkill -KILL -f \"AppId=2050650\" 2>/dev/null ; setsid steam steam://close/bigpicture ; sleep 2 ; kscreen-doctor output.DP-3.enable ; sleep 1 ; kscreen-doctor output.HDMI-A-1.disable'"}],"uuid":"2A4AC783-C033-A024-6319-35C1CB05C73C","wait-all":false}],"current_app":"54C1180A-EF68-B009-1913-C511E9229C54","env":{"PATH":"$(PATH):$(HOME)/.local/bin"},"host_name":"egion-cachy","host_uuid":"F2584AEF-440B-6C03-E50C-79966AF724F9","version":2}
+[fase0][2026-07-11 14:49:32] atualizando app 'SteamGame' (uuid=2A4AC783-C033-A024-6319-35C1CB05C73C) com AppID=2050650
+[fase0][2026-07-11 14:49:36] POST /api/apps -> HTTP 200: {"status":true}
+{"status":true}[fase0][2026-07-11 14:49:36] app atualizado. Lancando via Moonlight CLI...
+erro: app/com.moonlight_stream.Moonlight/x86_64/master não instalado
+[fase0][2026-07-11 14:49:45] POST /api/login -> HTTP 200
+[fase0][2026-07-11 14:49:45] login ok, cookie de sessao obtido
+[fase0][2026-07-11 14:49:45] GET /api/apps -> HTTP 200: {"apps":[{"allow-client-commands":false,"auto-detach":false,"cmd":"","elevated":false,"exclude-global-prep-cmd":false,"exclude-global-state-cmd":false,"exit-timeout":5,"gamepad":"","image-path":"desktop.png","name":"Desktop","output":"","per-client-app-identity":false,"prep-cmd":[{"do":"/home/egion/scripts/apollo-desktop-start.sh","undo":"/home/egion/scripts/apollo-deck-end.sh"}],"scale-factor":100,"state-cmd":[],"terminate-on-pause":true,"use-app-identity":false,"uuid":"54C1180A-EF68-B009-1913-C511E9229C54","virtual-display":false,"wait-all":false},{"allow-client-commands":true,"auto-detach":false,"cmd":"","elevated":false,"exclude-global-prep-cmd":false,"exclude-global-state-cmd":false,"exit-timeout":5,"gamepad":"","image-path":"/home/egion/Imagens/steam-deck-cover.png","name":"deck","output":"","per-client-app-identity":false,"prep-cmd":[{"do":"/home/egion/scripts/apollo-deck-start.sh","undo":"/home/egion/scripts/apollo-deck-end.sh"}],"scale-factor":100,"state-cmd":[],"terminate-on-pause":true,"use-app-identity":false,"uuid":"99DF5019-EDBF-1229-9612-8F28D67B89BD","virtual-display":false,"wait-all":false},{"auto-detach":true,"cmd":"steam steam://rungameid/2050650","elevated":false,"exclude-global-prep-cmd":false,"exit-timeout":5,"name":"SteamGame","output":"/tmp/apollo-steamgame-2050650.log","prep-cmd":[{"do":"kscreen-doctor output.HDMI-A-1.enable","undo":"kscreen-doctor output.HDMI-A-1.disable"},{"do":"kscreen-doctor output.HDMI-A-1.mode.1920x1080@60","undo":"sleep 1"},{"do":"kscreen-doctor output.HDMI-A-1.hdr.enable output.HDMI-A-1.wcg.enable","undo":"kscreen-doctor output.DP-3.enable"},{"do":"kscreen-doctor output.DP-3.disable","undo":"sleep 2"},{"do":"","undo":"setsid steam steam://close/bigpicture"},{"do":"","undo":"pkill -KILL -f AppId=2050650"},{"do":"","undo":"sleep 5"},{"do":"","undo":"pkill -TERM -f AppId=2050650"}],"uuid":"2A4AC783-C033-A024-6319-35C1CB05C73C","wait-all":false}],"current_app":"","env":{"PATH":"$(PATH):$(HOME)/.local/bin"},"host_name":"egion-cachy","host_uuid":"F2584AEF-440B-6C03-E50C-79966AF724F9","version":2}
+{
+  "apps": [
+    {
+      "allow-client-commands": false,
+      "auto-detach": false,
+      "cmd": "",
+      "elevated": false,
+      "exclude-global-prep-cmd": false,
+      "exclude-global-state-cmd": false,
+      "exit-timeout": 5,
+      "gamepad": "",
+      "image-path": "desktop.png",
+      "name": "Desktop",
+      "output": "",
+      "per-client-app-identity": false,
+      "prep-cmd": [
+        {
+          "do": "/home/egion/scripts/apollo-desktop-start.sh",
+          "undo": "/home/egion/scripts/apollo-deck-end.sh"
+        }
+      ],
+      "scale-factor": 100,
+      "state-cmd": [],
+      "terminate-on-pause": true,
+      "use-app-identity": false,
+      "uuid": "54C1180A-EF68-B009-1913-C511E9229C54",
+      "virtual-display": false,
+      "wait-all": false
+    },
+    {
+      "allow-client-commands": true,
+      "auto-detach": false,
+      "cmd": "",
+      "elevated": false,
+      "exclude-global-prep-cmd": false,
+      "exclude-global-state-cmd": false,
+      "exit-timeout": 5,
+      "gamepad": "",
+      "image-path": "/home/egion/Imagens/steam-deck-cover.png",
+      "name": "deck",
+      "output": "",
+      "per-client-app-identity": false,
+      "prep-cmd": [
+        {
+          "do": "/home/egion/scripts/apollo-deck-start.sh",
+          "undo": "/home/egion/scripts/apollo-deck-end.sh"
+        }
+      ],
+      "scale-factor": 100,
+      "state-cmd": [],
+      "terminate-on-pause": true,
+      "use-app-identity": false,
+      "uuid": "99DF5019-EDBF-1229-9612-8F28D67B89BD",
+      "virtual-display": false,
+      "wait-all": false
+    },
+    {
+      "auto-detach": true,
+      "cmd": "steam steam://rungameid/2050650",
+      "elevated": false,
+      "exclude-global-prep-cmd": false,
+      "exit-timeout": 5,
+      "name": "SteamGame",
+      "output": "/tmp/apollo-steamgame-2050650.log",
+      "prep-cmd": [
+        {
+          "do": "kscreen-doctor output.HDMI-A-1.enable",
+          "undo": "kscreen-doctor output.HDMI-A-1.disable"
+        },
+        {
+          "do": "kscreen-doctor output.HDMI-A-1.mode.1920x1080@60",
+          "undo": "sleep 1"
+        },
+        {
+          "do": "kscreen-doctor output.HDMI-A-1.hdr.enable output.HDMI-A-1.wcg.enable",
+          "undo": "kscreen-doctor output.DP-3.enable"
+        },
+        {
+          "do": "kscreen-doctor output.DP-3.disable",
+          "undo": "sleep 2"
+        },
+        {
+          "do": "",
+          "undo": "setsid steam steam://close/bigpicture"
+        },
+        {
+          "do": "",
+          "undo": "pkill -KILL -f AppId=2050650"
+        },
+        {
+          "do": "",
+          "undo": "sleep 5"
+        },
+        {
+          "do": "",
+          "undo": "pkill -TERM -f AppId=2050650"
+        }
+      ],
+      "uuid": "2A4AC783-C033-A024-6319-35C1CB05C73C",
+      "wait-all": false
+    }
+  ],
+  "current_app": "",
+  "env": {
+    "PATH": "$(PATH):$(HOME)/.local/bin"
+  },
+  "host_name": "egion-cachy",
+  "host_uuid": "F2584AEF-440B-6C03-E50C-79966AF724F9",
+  "version": 2
+}
