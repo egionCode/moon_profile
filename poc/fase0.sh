@@ -33,8 +33,8 @@ exec > >(tee -a "${LOG_FILE}") 2>&1
 
 APOLLO_HOST="192.168.1.6"          # IP do host com Apollo
 APOLLO_PORT="47990"
-APOLLO_USER='admin'                # credencial admin do Apollo
-APOLLO_PASS='troque-me'            # aspas SIMPLES aqui de proposito: com aspas
+APOLLO_USER='apollo'                # credencial admin do Apollo
+APOLLO_PASS='2003'                 # aspas SIMPLES aqui de proposito: com aspas
                                     # duplas, "$", "`" e "\" na senha seriam
                                     # interpretados pelo bash antes de virar o
                                     # valor da variavel, corrompendo a senha
