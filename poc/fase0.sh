@@ -3,13 +3,20 @@
 # Reproduz o fluxo completo (Apollo + Moonlight CLI) sem escrever o plugin,
 # pra validar que HDR, resolucao e troca de AppID funcionam ponta a ponta.
 #
-# Uso:
+# Uso (rodar no Deck: e' onde o curl e o cliente Moonlight vivem):
 #   1. Preenche as variaveis na secao CONFIG abaixo.
 #   2. ./fase0.sh apply    -> atualiza o app "SteamGame" no Apollo e lanca via Moonlight
-#   3. ./fase0.sh undo     -> roda manualmente o prep-cmd undo (pra testar sem esperar o timeout)
+#   3. ./fase0.sh undo     -> IMPRIME o prep-cmd undo (nao executa!). Cola via SSH no HOST
+#                             pra testar sem esperar o Apollo detectar fim de sessao.
 #   4. ./fase0.sh apps     -> lista os apps atuais no Apollo (debug)
 #
-# Requisitos: curl, jq, moonlight (flatpak com.moonlight_stream.Moonlight), kscreen-doctor no host.
+# Onde cada coisa roda:
+#   - curl (POST /api/apps) e o moonlight CLI: no DECK.
+#   - kscreen-doctor / steam / pkill do prep-cmd: no HOST, executados PELO APOLLO
+#     (nunca localmente por este script - ver cmd_undo).
+#
+# Requisitos no Deck: curl, jq, moonlight (flatpak com.moonlight_stream.Moonlight).
+# Requisitos no host: Apollo rodando, kscreen-doctor, KDE Plasma 6 Wayland.
 
 set -euo pipefail
 
@@ -17,8 +24,12 @@ set -euo pipefail
 
 APOLLO_HOST="192.168.1.6"          # IP do host com Apollo
 APOLLO_PORT="47990"
-APOLLO_USER="admin"                # credencial admin do Apollo
-APOLLO_PASS="troque-me"
+APOLLO_USER='admin'                # credencial admin do Apollo
+APOLLO_PASS='troque-me'            # aspas SIMPLES aqui de proposito: com aspas
+                                    # duplas, "$", "`" e "\" na senha seriam
+                                    # interpretados pelo bash antes de virar o
+                                    # valor da variavel, corrompendo a senha
+                                    # silenciosamente
 
 APPID="2050650"                    # AppID do Steam a testar (ex: RE4 Remake)
 APP_NAME="SteamGame"               # nome fixo do app no Apollo, reaproveitado a cada troca de jogo
@@ -32,9 +43,32 @@ HDR="true"                         # "true" ou "false"
 # ============================================================
 
 BASE_URL="https://${APOLLO_HOST}:${APOLLO_PORT}"
-CURL_AUTH=(-u "${APOLLO_USER}:${APOLLO_PASS}" -k -s)
+
+# Este fork do Apollo (ClassicOldSong/Apollo) NAO usa HTTP Basic Auth na API,
+# apesar do que diz docs/api.md. authenticate() em src/confighttp.cpp so
+# checa um cookie de sessao "auth", obtido via POST /api/login. Por isso
+# usamos cookie jar em vez de "-u user:pass".
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "${COOKIE_JAR}"' EXIT
+CURL_AUTH=(-k -s -b "${COOKIE_JAR}" -c "${COOKIE_JAR}")
 
 log() { printf '[fase0] %s\n' "$1" >&2; }
+
+# Faz o POST /api/login e guarda o cookie "auth" no cookie jar pras
+# proximas chamadas. Tem que rodar antes de qualquer outra chamada na API.
+login() {
+    local payload raw status
+    payload=$(jq -n --arg u "${APOLLO_USER}" --arg p "${APOLLO_PASS}" \
+        '{username: $u, password: $p}')
+    raw=$(curl "${CURL_AUTH[@]}" -w '\n%{http_code}' -X POST "${BASE_URL}/api/login" \
+        -H "Content-Type: application/json" -d "${payload}")
+    status="${raw##*$'\n'}"
+    if [[ ! "${status}" =~ ^2 ]]; then
+        log "ERRO HTTP ${status} em POST /api/login - usuario/senha errados em Apollo?"
+        exit 1
+    fi
+    log "login ok, cookie de sessao obtido"
+}
 
 # Corpo (sem o wrapper "bash -c '...'") do prep-cmd "do": ativa output alvo,
 # aplica modo, HDR, desliga o resto. Usa aspas DUPLAS pros literais porque o
@@ -71,21 +105,45 @@ build_undo_body() {
 build_do_cmd() { printf "bash -c '%s'" "$(build_do_body)"; }
 build_undo_cmd() { printf "bash -c '%s'" "$(build_undo_body)"; }
 
+# Faz a chamada e VERIFICA o status HTTP. curl so falha (exit != 0) em erro de
+# rede/TLS, nao em 401/403/500 - por isso um 401 passava batido e o script
+# seguia como se tivesse dado certo. Aqui aborta com o corpo da resposta.
+api_request() {
+    local method="$1" path="$2" data="${3:-}"
+    local raw status body
+    if [[ -n "${data}" ]]; then
+        raw=$(curl "${CURL_AUTH[@]}" -w '\n%{http_code}' -X "${method}" "${BASE_URL}${path}" \
+            -H "Content-Type: application/json" -d "${data}")
+    else
+        raw=$(curl "${CURL_AUTH[@]}" -w '\n%{http_code}' -X "${method}" "${BASE_URL}${path}")
+    fi
+    status="${raw##*$'\n'}"
+    body="${raw%$'\n'*}"
+    if [[ ! "${status}" =~ ^2 ]]; then
+        log "ERRO HTTP ${status} em ${method} ${path}"
+        log "resposta do Apollo: ${body}"
+        exit 1
+    fi
+    printf '%s' "${body}"
+}
+
 # Busca o index do app existente com nome $APP_NAME, ou -1 se ainda nao existe.
 # Isso e o que permite trocar de AppID sem reiniciar o Apollo: sempre atualiza
 # o mesmo app em vez de criar um novo a cada chamada.
 find_app_index() {
-    curl "${CURL_AUTH[@]}" "${BASE_URL}/api/apps" \
+    api_request GET /api/apps \
         | jq -r --arg name "${APP_NAME}" \
             '.apps | to_entries[] | select(.value.name == $name) | .key' \
         | head -n1
 }
 
 cmd_apps() {
-    curl "${CURL_AUTH[@]}" "${BASE_URL}/api/apps" | jq .
+    login
+    api_request GET /api/apps | jq .
 }
 
 cmd_apply() {
+    login
     local index
     index=$(find_app_index || true)
     index="${index:--1}"
@@ -115,9 +173,7 @@ cmd_apply() {
             output: $output
         }')
 
-    curl "${CURL_AUTH[@]}" -X POST "${BASE_URL}/api/apps" \
-        -H "Content-Type: application/json" \
-        -d "${payload}"
+    api_request POST /api/apps "${payload}"
     log "app atualizado. Lancando via Moonlight CLI..."
 
     local hdr_flag=(--no-hdr)
@@ -131,8 +187,14 @@ cmd_apply() {
 }
 
 cmd_undo() {
-    log "rodando o prep-cmd undo manualmente (sem esperar o Apollo)"
-    bash -c "$(build_undo_body)"
+    # NAO executa localmente: o prep-cmd undo roda no HOST (e' o Apollo, no
+    # host, quem chama isso), nunca no Deck. kscreen-doctor referencia as
+    # saidas de video da GPU do host, e o pkill -f "AppId=..." tem que mirar
+    # o processo do Steam do host, nao o do Deck. Executar aqui por engano
+    # mataria o processo errado ou simplesmente falharia silenciosamente.
+    log "ATENCAO: cole o comando abaixo via SSH no HOST, nao rode no Deck"
+    build_undo_body
+    echo
 }
 
 case "${1:-}" in
