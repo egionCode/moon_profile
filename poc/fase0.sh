@@ -5,10 +5,12 @@
 #
 # Uso (rodar no Deck: e' onde o curl e o cliente Moonlight vivem):
 #   1. Preenche as variaveis na secao CONFIG abaixo.
-#   2. ./fase0.sh apply    -> atualiza o app "SteamGame" no Apollo e lanca via Moonlight
+#   2. ./fase0.sh apply    -> atualiza (por uuid) ou cria o app "SteamGame" no
+#                             Apollo e lanca via Moonlight
 #   3. ./fase0.sh undo     -> IMPRIME o prep-cmd undo (nao executa!). Cola via SSH no HOST
 #                             pra testar sem esperar o Apollo detectar fim de sessao.
 #   4. ./fase0.sh apps     -> lista os apps atuais no Apollo (debug)
+#   5. ./fase0.sh delete   -> remove o app "SteamGame" (debug/limpeza)
 #
 # Onde cada coisa roda:
 #   - curl (POST /api/apps) e o moonlight CLI: no DECK.
@@ -19,6 +21,13 @@
 # Requisitos no host: Apollo rodando, kscreen-doctor, KDE Plasma 6 Wayland.
 
 set -euo pipefail
+
+# Log em arquivo ao lado do script, com tudo que o script imprime (stdout e
+# stderr) durante a execucao, inclusive as respostas cruas do Apollo. "tee -a"
+# mantem a saida no terminal alem de gravar no arquivo.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE="${SCRIPT_DIR}/fase0.log"
+exec > >(tee -a "${LOG_FILE}") 2>&1
 
 # ============ CONFIG (preenche antes de rodar) ============
 
@@ -52,7 +61,7 @@ COOKIE_JAR="$(mktemp)"
 trap 'rm -f "${COOKIE_JAR}"' EXIT
 CURL_AUTH=(-k -s -b "${COOKIE_JAR}" -c "${COOKIE_JAR}")
 
-log() { printf '[fase0] %s\n' "$1" >&2; }
+log() { printf '[fase0][%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >&2; }
 
 # Faz o POST /api/login e guarda o cookie "auth" no cookie jar pras
 # proximas chamadas. Tem que rodar antes de qualquer outra chamada na API.
@@ -63,6 +72,7 @@ login() {
     raw=$(curl "${CURL_AUTH[@]}" -w '\n%{http_code}' -X POST "${BASE_URL}/api/login" \
         -H "Content-Type: application/json" -d "${payload}")
     status="${raw##*$'\n'}"
+    log "POST /api/login -> HTTP ${status}"
     if [[ ! "${status}" =~ ^2 ]]; then
         log "ERRO HTTP ${status} em POST /api/login - usuario/senha errados em Apollo?"
         exit 1
@@ -119,21 +129,26 @@ api_request() {
     fi
     status="${raw##*$'\n'}"
     body="${raw%$'\n'*}"
+    log "${method} ${path} -> HTTP ${status}: ${body}"
     if [[ ! "${status}" =~ ^2 ]]; then
         log "ERRO HTTP ${status} em ${method} ${path}"
-        log "resposta do Apollo: ${body}"
         exit 1
     fi
     printf '%s' "${body}"
 }
 
-# Busca o index do app existente com nome $APP_NAME, ou -1 se ainda nao existe.
-# Isso e o que permite trocar de AppID sem reiniciar o Apollo: sempre atualiza
-# o mesmo app em vez de criar um novo a cada chamada.
-find_app_index() {
+# Busca o UUID do app existente com nome $APP_NAME, ou string vazia se ainda
+# nao existe. Este fork do Apollo NAO identifica apps por indice de array -
+# o campo "index" do payload e simplesmente descartado pelo servidor
+# (inputTree_p->erase("index") em src/process.cpp). Quem faz update-in-place
+# e o "uuid": POST /api/apps com uuid de um app existente SUBSTITUI aquele
+# app; com uuid vazio, CRIA um novo (ver saveApp()/migrate_apps() no
+# confighttp.cpp/process.cpp do repo). Por isso nao precisa deletar+recriar:
+# so precisa reenviar o mesmo uuid a cada troca de AppID.
+find_app_uuid() {
     api_request GET /api/apps \
         | jq -r --arg name "${APP_NAME}" \
-            '.apps | to_entries[] | select(.value.name == $name) | .key' \
+            '.apps[]? | select(.name == $name) | .uuid' \
         | head -n1
 }
 
@@ -142,12 +157,27 @@ cmd_apps() {
     api_request GET /api/apps | jq .
 }
 
+# Utilitario de debug: remove o app "SteamGame" via POST /api/apps/delete
+# (a doc lista "DELETE /api/apps/{index}", mas o codigo real registra
+# "^/api/apps/delete$" em POST com {"uuid": "..."} no corpo - mais um
+# descompasso doc/codigo nesse fork).
+cmd_delete() {
+    login
+    local uuid
+    uuid=$(find_app_uuid || true)
+    if [[ -z "${uuid}" ]]; then
+        log "app '${APP_NAME}' nao encontrado, nada pra deletar"
+        return 0
+    fi
+    log "deletando app '${APP_NAME}' (uuid=${uuid})"
+    api_request POST /api/apps/delete "$(jq -n --arg u "${uuid}" '{uuid: $u}')"
+}
+
 cmd_apply() {
     login
-    local index
-    index=$(find_app_index || true)
-    index="${index:--1}"
-    log "atualizando app '${APP_NAME}' (index=${index}) com AppID=${APPID}"
+    local uuid
+    uuid=$(find_app_uuid || true)
+    log "atualizando app '${APP_NAME}' (uuid=${uuid:-<novo>}) com AppID=${APPID}"
 
     local do_cmd undo_cmd payload
     do_cmd=$(build_do_cmd)
@@ -156,14 +186,14 @@ cmd_apply() {
     payload=$(jq -n \
         --arg name "${APP_NAME}" \
         --arg cmd "steam steam://rungameid/${APPID}" \
-        --argjson index "${index}" \
+        --arg uuid "${uuid}" \
         --arg do "${do_cmd}" \
         --arg undo "${undo_cmd}" \
         --arg output "/tmp/apollo-steamgame-${APPID}.log" \
         '{
             name: $name,
             cmd: $cmd,
-            index: $index,
+            uuid: $uuid,
             "auto-detach": true,
             "wait-all": false,
             "exit-timeout": 5,
@@ -201,8 +231,9 @@ case "${1:-}" in
     apply) cmd_apply ;;
     undo) cmd_undo ;;
     apps) cmd_apps ;;
+    delete) cmd_delete ;;
     *)
-        echo "Uso: $0 {apply|undo|apps}" >&2
+        echo "Uso: $0 {apply|undo|apps|delete}" >&2
         exit 1
         ;;
 esac
