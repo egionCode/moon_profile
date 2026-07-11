@@ -328,3 +328,325 @@ libva info: va_openDriver() returns 0
 00:00:05 - Qt Info: Processing new PC at "192.168.1.6:47989" from mDNS with IPv6 address "[2804:d59:868f:a500:7148:8496:ba06:e176]:47989"
 00:00:05 - Qt Info: Executing request: "http://192.168.1.6:47989/serverinfo?uniqueid=0123456789ABCDEF&uuid=0cb4f2b9731a455b8391b330b9087f27"
 00:00:05 - Qt Info: Executing request: "https://192.168.1.6:47984/serverinfo?uniqueid=0123456789ABCDEF&uuid=3f9e03b9f58847afbf0169aa06911f4a"
+[fase0][2026-07-11 14:26:42] POST /api/login -> HTTP 200
+[fase0][2026-07-11 14:26:42] login ok, cookie de sessao obtido
+[fase0][2026-07-11 14:26:42] GET /api/apps -> HTTP 200: {"apps":[{"allow-client-commands":false,"auto-detach":false,"cmd":"","elevated":false,"exclude-global-prep-cmd":false,"exclude-global-state-cmd":false,"exit-timeout":5,"gamepad":"","image-path":"desktop.png","name":"Desktop","output":"","per-client-app-identity":false,"prep-cmd":[{"do":"/home/egion/scripts/apollo-desktop-start.sh","undo":"/home/egion/scripts/apollo-deck-end.sh"}],"scale-factor":100,"state-cmd":[],"terminate-on-pause":true,"use-app-identity":false,"uuid":"54C1180A-EF68-B009-1913-C511E9229C54","virtual-display":false,"wait-all":false},{"allow-client-commands":true,"auto-detach":false,"cmd":"","elevated":false,"exclude-global-prep-cmd":false,"exclude-global-state-cmd":false,"exit-timeout":5,"gamepad":"","image-path":"/home/egion/Imagens/steam-deck-cover.png","name":"deck","output":"","per-client-app-identity":false,"prep-cmd":[{"do":"/home/egion/scripts/apollo-deck-start.sh","undo":"/home/egion/scripts/apollo-deck-end.sh"}],"scale-factor":100,"state-cmd":[],"terminate-on-pause":true,"use-app-identity":false,"uuid":"99DF5019-EDBF-1229-9612-8F28D67B89BD","virtual-display":false,"wait-all":false},{"auto-detach":true,"cmd":"steam steam://rungameid/2050650","elevated":false,"exclude-global-prep-cmd":false,"exit-timeout":5,"name":"SteamGame","output":"/tmp/apollo-steamgame-2050650.log","prep-cmd":[{"do":"bash -c 'kscreen-doctor output.HDMI-A-1.enable ; kscreen-doctor output.HDMI-A-1.mode.3840x2160@60 ; kscreen-doctor output.HDMI-A-1.hdr.enable ; kscreen-doctor output.HDMI-A-1.wcg.enable ; kscreen-doctor output.DP-3.disable'","undo":"bash -c 'pkill -TERM -f \"AppId=2050650\" ; sleep 5 ; pkill -KILL -f \"AppId=2050650\" 2>/dev/null ; setsid steam steam://close/bigpicture ; sleep 2 ; kscreen-doctor output.DP-3.enable ; sleep 1 ; kscreen-doctor output.HDMI-A-1.disable'"}],"uuid":"2A4AC783-C033-A024-6319-35C1CB05C73C","wait-all":false}],"current_app":"","env":{"PATH":"$(PATH):$(HOME)/.local/bin"},"host_name":"egion-cachy","host_uuid":"F2584AEF-440B-6C03-E50C-79966AF724F9","version":2}
+[fase0][2026-07-11 14:26:42] atualizando app 'SteamGame' (uuid=2A4AC783-C033-A024-6319-35C1CB05C73C) com AppID=2050650
+[fase0][2026-07-11 14:26:42] POST /api/apps -> HTTP 200: {"status":true}
+{"status":true}[fase0][2026-07-11 14:26:42] app atualizado. Lancando via Moonlight CLI...
+00:00:00 - SDL Info (0): Compiled with SDL 2.32.68
+00:00:00 - SDL Info (0): Running with SDL 2.32.68
+00:00:00 - Qt Info: No translation available for "en_US"
+00:00:00 - SDL Info (0): Detected Wayland
+00:00:00 - Qt Warning: QGuiApplication::setDesktopFileName: the specified desktop file name ends with .desktop. For compatibility reasons, the .desktop suffix will be removed. Please specify a desktop file name without .desktop suffix
+00:00:00 - Qt Warning: qrc:/gui/main.qml:13:1: QML ApplicationWindow: ToolTip attached property must be attached to an object deriving from Item
+00:00:00 - Qt Info: Found "gamecontrollerdb.txt" at "/home/deck/.var/app/com.moonlight_stream.Moonlight/cache/Moonlight Game Streaming Project/Moonlight/gamecontrollerdb.txt"
+00:00:00 - SDL Info (0): Loaded 462 new gamepad mappings
+00:00:00 - SDL Info (0): V-sync disabled
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/intel-vaapi-driver/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/nvidia-vaapi-driver/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/GL/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+00:00:00 - SDL Info (0): Initialized VAAPI 1.22
+00:00:00 - SDL Info (0): Driver: Mesa Gallium driver 26.0.6 for AMD Custom GPU 0405 (radeonsi, vangogh, ACO, DRM 3.64, 6.16.12-valve24.2-1-neptune-616-g57ac0765fe0d)
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x3231564e -> nv12.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30313050 -> p010le.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x32313050 -> p012le.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x36313050 -> unknown.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30323449 -> yuv420p.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x32315659 -> yuv420p.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x56595559 -> unknown.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x32595559 -> yuyv422.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x59565955 -> uyvy422.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30303859 -> gray.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x50343434 -> yuv444p.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x56323234 -> yuv440p.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x50424752 -> unknown.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x41524742 -> bgra.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x41424752 -> rgba.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x42475241 -> argb.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x58524742 -> bgr0.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x58424752 -> rgb0.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30335241 -> unknown.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30334241 -> unknown.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30335258 -> x2rgb10le.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Format 0x30334258 -> unknown.
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] VAAPI driver: Mesa Gallium driver 26.0.6 for AMD Custom GPU 0405 (radeonsi, vangogh, ACO, DRM 3.64, 6.16.12-valve24.2-1-neptune-616-g57ac0765fe0d).
+00:00:00 - FFmpeg: [VAAPI @ 0x7f1924010880] Driver not found in known nonstandard list, using standard behaviour.
+00:00:00 - SDL Info (0): Selected overlay subpicture format: BGRA8888
+00:00:00 - SDL Info (0): Vulkan rendering device chosen: AMD Custom GPU 0405 (RADV VANGOGH)
+00:00:00 - SDL Info (0): Using Immediate present mode with V-Sync disabled
+00:00:00 - SDL Info (0): Using VAAPI accelerated renderer on wayland
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 32(VPS), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 33(SPS), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 34(PPS), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decoding VPS
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Main 10 profile bitstream
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decoding SPS
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Main 10 profile bitstream
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decoding VUI
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decoding PPS
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Format vaapi chosen by get_format().
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Format vaapi requires hwaccel hevc_vaapi initialisation.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Considering format 0x3231564e -> nv12.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Considering format 0x30313050 -> p010le.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Ignoring unknown format 0x36313050.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Picked p010le (0x30313050) as best match for yuv420p10le.
+00:00:00 - FFmpeg: [AVHWFramesContext @ 0x7f1924323900] Created surface 0x1.
+00:00:00 - FFmpeg: [AVHWFramesContext @ 0x7f1924323900] Direct mapping possible.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decode context initialised: 0x2/0x3.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Output frame with POC 0/3.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Param buffer (type 0, 604 bytes) is 0x4.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 0 param buffer (264 bytes) is 0x5.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 0 data buffer (77 bytes) is 0x6.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 1 param buffer (264 bytes) is 0x7.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 1 data buffer (87 bytes) is 0x8.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 2 param buffer (264 bytes) is 0x9.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 2 data buffer (96 bytes) is 0xa.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 3 param buffer (264 bytes) is 0xb.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Slice 3 data buffer (77 bytes) is 0xc.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decode to surface 0x1.
+00:00:00 - FFmpeg: [hevc @ 0x7f1924026580] Decoded frame with POC 0/3.
+00:00:00 - SDL Info (0): FFmpeg-based video decoder chosen
+00:00:00 - Qt Info: Found "gamecontrollerdb.txt" at "/home/deck/.var/app/com.moonlight_stream.Moonlight/cache/Moonlight Game Streaming Project/Moonlight/gamecontrollerdb.txt"
+00:00:00 - SDL Info (0): Loaded 462 new gamepad mappings
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 100.108.192.9:48010
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 177.1.117.216:48010
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.255:48010
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 192.168.1.6:48010
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 255.255.255.255:48010
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via 2804:d59:868f:a500:7148:8496:ba06:e176:48010
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:9
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:47009
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:47998
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:47999
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:48000
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:48002
+00:00:00 - Qt Info: Sent WoL packet to egion-cachy via ff02::1%tailscale0:48010
+00:00:00 - Qt Info: Processing new PC at "192.168.1.6:47989" from user with IPv6 address "<NULL>"
+00:00:00 - Qt Info: Executing request: "http://192.168.1.6:47989/serverinfo?uniqueid=0123456789ABCDEF&uuid=28b3c596ff754391975845907713ae55"
+00:00:00 - Qt Info: Executing request: "https://192.168.1.6:47984/serverinfo?uniqueid=0123456789ABCDEF&uuid=55ae7253e77a4fa9ba7fb58b63df8747"
+00:00:00 - Qt Debug: Current Moonlight version: "6.1.0"
+00:00:00 - Qt Info: "egion-cachy" is now online at "192.168.1.6:47989"
+00:00:00 - Qt Info: Found "ModeSeven.ttf" at ":/data/ModeSeven.ttf"
+00:00:01 - Qt Info: Gamepad mappings are up to date
+00:00:01 - Qt Info: Discovered mDNS host: "egion-cachy-2.local."
+00:00:01 - Qt Info: Latest supported GFE server: "99.99.99.99"
+00:00:01 - SDL Info (0): Qt UI screen is at (0,0)
+00:00:01 - SDL Info (0): SDL found matching display 0
+00:00:01 - Qt Info: Server GPU: ""
+00:00:01 - Qt Info: Server GFE version: "3.23.0.74"
+00:00:01 - SDL Info (0): Video bitrate: 80000 kbps
+00:00:01 - SDL Info (0): Desired audio buffer: 720 samples (5760 bytes)
+00:00:01 - SDL Info (0): Obtained audio buffer: 720 samples (5760 bytes)
+00:00:01 - SDL Info (0): SDL audio driver: pulseaudio
+00:00:01 - SDL Info (0): Audio channel count: 2
+00:00:01 - SDL Info (0): Audio channel mask: 3
+00:00:01 - SDL Info (0): V-sync disabled
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/intel-vaapi-driver/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/nvidia-vaapi-driver/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/GL/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+00:00:01 - SDL Info (0): Initialized VAAPI 1.22
+00:00:01 - SDL Info (0): Driver: Mesa Gallium driver 26.0.6 for AMD Custom GPU 0405 (radeonsi, vangogh, ACO, DRM 3.64, 6.16.12-valve24.2-1-neptune-616-g57ac0765fe0d)
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x3231564e -> nv12.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30313050 -> p010le.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x32313050 -> p012le.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x36313050 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30323449 -> yuv420p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x32315659 -> yuv420p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x56595559 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x32595559 -> yuyv422.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x59565955 -> uyvy422.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30303859 -> gray.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x50343434 -> yuv444p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x56323234 -> yuv440p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x50424752 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x41524742 -> bgra.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x41424752 -> rgba.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x42475241 -> argb.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x58524742 -> bgr0.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x58424752 -> rgb0.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30335241 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30334241 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30335258 -> x2rgb10le.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Format 0x30334258 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] VAAPI driver: Mesa Gallium driver 26.0.6 for AMD Custom GPU 0405 (radeonsi, vangogh, ACO, DRM 3.64, 6.16.12-valve24.2-1-neptune-616-g57ac0765fe0d).
+00:00:01 - FFmpeg: [VAAPI @ 0x7f18ec011d40] Driver not found in known nonstandard list, using standard behaviour.
+00:00:01 - SDL Info (0): Selected overlay subpicture format: BGRA8888
+00:00:01 - SDL Info (0): Vulkan rendering device chosen: AMD Custom GPU 0405 (RADV VANGOGH)
+00:00:01 - SDL Info (0): Using Immediate present mode with V-Sync disabled
+00:00:01 - SDL Info (0): Using VAAPI accelerated renderer on wayland
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 32(VPS), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 33(SPS), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 34(PPS), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding VPS
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Main 10 profile bitstream
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding SPS
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Main 10 profile bitstream
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding VUI
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding PPS
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Format vaapi chosen by get_format().
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Format vaapi requires hwaccel hevc_vaapi initialisation.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Considering format 0x3231564e -> nv12.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Considering format 0x30313050 -> p010le.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Ignoring unknown format 0x36313050.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Picked p010le (0x30313050) as best match for yuv420p10le.
+00:00:01 - FFmpeg: [AVHWFramesContext @ 0x7f192401a0c0] Created surface 0x1.
+00:00:01 - FFmpeg: [AVHWFramesContext @ 0x7f192401a0c0] Direct mapping possible.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decode context initialised: 0x2/0x3.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Output frame with POC 0/3.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Param buffer (type 0, 604 bytes) is 0x4.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 0 param buffer (264 bytes) is 0x5.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 0 data buffer (77 bytes) is 0x6.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 1 param buffer (264 bytes) is 0x7.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 1 data buffer (87 bytes) is 0x8.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 2 param buffer (264 bytes) is 0x9.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 2 data buffer (96 bytes) is 0xa.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 3 param buffer (264 bytes) is 0xb.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 3 data buffer (77 bytes) is 0xc.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decode to surface 0x1.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoded frame with POC 0/3.
+00:00:01 - SDL Info (0): FFmpeg-based video decoder chosen
+00:00:01 - SDL Info (0): Desired audio buffer: 720 samples (5760 bytes)
+00:00:01 - SDL Info (0): Obtained audio buffer: 720 samples (5760 bytes)
+00:00:01 - SDL Info (0): SDL audio driver: pulseaudio
+00:00:01 - Qt Info: Found "gamecontrollerdb.txt" at "/home/deck/.var/app/com.moonlight_stream.Moonlight/cache/Moonlight Game Streaming Project/Moonlight/gamecontrollerdb.txt"
+00:00:01 - SDL Info (0): Loaded 462 new gamepad mappings
+00:00:01 - SDL Info (0): V-sync disabled
+libva info: VA-API version 1.22.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/intel-vaapi-driver/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/nvidia-vaapi-driver/radeonsi_drv_video.so
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/GL/lib/dri/radeonsi_drv_video.so
+libva info: Found init function __vaDriverInit_1_22
+libva info: va_openDriver() returns 0
+00:00:01 - SDL Info (0): Initialized VAAPI 1.22
+00:00:01 - SDL Info (0): Driver: Mesa Gallium driver 26.0.6 for AMD Custom GPU 0405 (radeonsi, vangogh, ACO, DRM 3.64, 6.16.12-valve24.2-1-neptune-616-g57ac0765fe0d)
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x3231564e -> nv12.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30313050 -> p010le.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x32313050 -> p012le.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x36313050 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30323449 -> yuv420p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x32315659 -> yuv420p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x56595559 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x32595559 -> yuyv422.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x59565955 -> uyvy422.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30303859 -> gray.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x50343434 -> yuv444p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x56323234 -> yuv440p.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x50424752 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x41524742 -> bgra.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x41424752 -> rgba.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x42475241 -> argb.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x58524742 -> bgr0.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x58424752 -> rgb0.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30335241 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30334241 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30335258 -> x2rgb10le.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Format 0x30334258 -> unknown.
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] VAAPI driver: Mesa Gallium driver 26.0.6 for AMD Custom GPU 0405 (radeonsi, vangogh, ACO, DRM 3.64, 6.16.12-valve24.2-1-neptune-616-g57ac0765fe0d).
+00:00:01 - FFmpeg: [VAAPI @ 0x7f1924350400] Driver not found in known nonstandard list, using standard behaviour.
+00:00:01 - SDL Info (0): Selected overlay subpicture format: BGRA8888
+00:00:01 - SDL Info (0): Vulkan rendering device chosen: AMD Custom GPU 0405 (RADV VANGOGH)
+00:00:01 - SDL Info (0): Using Immediate present mode with V-Sync disabled
+00:00:01 - SDL Info (0): Using VAAPI accelerated renderer on wayland
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 32(VPS), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 33(SPS), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 34(PPS), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] nal_unit_type: 21(CRA_NUT), nuh_layer_id: 0, temporal_id: 0
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding VPS
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Main 10 profile bitstream
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding SPS
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Main 10 profile bitstream
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding VUI
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoding PPS
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Format vaapi chosen by get_format().
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Format vaapi requires hwaccel hevc_vaapi initialisation.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Considering format 0x3231564e -> nv12.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Considering format 0x30313050 -> p010le.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Ignoring unknown format 0x36313050.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Picked p010le (0x30313050) as best match for yuv420p10le.
+00:00:01 - FFmpeg: [AVHWFramesContext @ 0x7f19242e5080] Created surface 0x1.
+00:00:01 - FFmpeg: [AVHWFramesContext @ 0x7f19242e5080] Direct mapping possible.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decode context initialised: 0x2/0x3.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Output frame with POC 0/3.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Param buffer (type 0, 604 bytes) is 0x4.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 0 param buffer (264 bytes) is 0x5.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 0 data buffer (77 bytes) is 0x6.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 1 param buffer (264 bytes) is 0x7.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 1 data buffer (87 bytes) is 0x8.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 2 param buffer (264 bytes) is 0x9.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 2 data buffer (96 bytes) is 0xa.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 3 param buffer (264 bytes) is 0xb.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Slice 3 data buffer (77 bytes) is 0xc.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decode to surface 0x1.
+00:00:01 - FFmpeg: [hevc @ 0x7f192431e440] Decoded frame with POC 0/3.
+00:00:01 - SDL Info (0): FFmpeg-based video decoder chosen
+00:00:02 - Qt Info: Found "gamecontrollerdb.txt" at "/home/deck/.var/app/com.moonlight_stream.Moonlight/cache/Moonlight Game Streaming Project/Moonlight/gamecontrollerdb.txt"
+00:00:02 - SDL Info (0): Loaded 462 new gamepad mappings
+00:00:02 - Qt Info: Resolving "egion-cachy-2.local." timed out. Retrying...
+00:00:02 - Qt Info: Resolved "egion-cachy-2.local." to QHostAddress("2804:d59:868f:a500:7148:8496:ba06:e176")
+00:00:02 - Qt Info: Resolved "egion-cachy-2.local." to QHostAddress("192.168.1.6")
+00:00:03 - Qt Info: Executing request: "https://192.168.1.6:47984/launch?uniqueid=0123456789ABCDEF&uuid=caf0f8bba7c5463dbdb6482f8c647726&appid=1544928152&mode=3840x2160x60&additionalStates=1&sops=1&rikey=REDACTED&rikeyid=REDACTED&hdrMode=1&clientHdrCapVersion=0&clientHdrCapSupportedFlagsInUint32=0&clientHdrCapMetaDataId=NV_STATIC_METADATA_TYPE_1&clientHdrCapDisplayData=0x0x0x0x0x0x0x0x0x0x0&localAudioPlayMode=0&surroundAudioInfo=196610&remoteControllersBitmap=1&gcmap=1&gcpersist=0&corever=1"
+00:00:03 - Qt Info: Launch response: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root status_code=\"-1\" status_message=\"Failed to start the specified application\"><gamesession>0</gamesession></root>"
+00:00:03 - Qt Warning: Request failed: 0 "Failed to start the specified application"
+00:00:03 - Qt Critical: Host returned error: Failed to start the specified application (Error 0)
+00:00:04 - Qt Info: Found "gamecontrollerdb.txt" at "/home/deck/.var/app/com.moonlight_stream.Moonlight/cache/Moonlight Game Streaming Project/Moonlight/gamecontrollerdb.txt"
+00:00:04 - SDL Info (0): Loaded 462 new gamepad mappings
+00:00:04 - Qt Info: Processing new PC at "192.168.1.6:47989" from mDNS with IPv6 address "[2804:d59:868f:a500:7148:8496:ba06:e176]:47989"
+00:00:04 - Qt Info: Executing request: "http://192.168.1.6:47989/serverinfo?uniqueid=0123456789ABCDEF&uuid=b60736cdab93413b969bbcdc7f5db08f"
+00:00:04 - Qt Info: Executing request: "https://192.168.1.6:47984/serverinfo?uniqueid=0123456789ABCDEF&uuid=cf42e5578c054518b38df7b1fab643de"
