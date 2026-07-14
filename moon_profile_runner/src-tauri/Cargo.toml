@@ -20,6 +20,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
+# Notificacao de desktop (KDE/freedesktop) quando o Deck sincroniza jogos.
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Servidor HTTP embutido (fala com o plugin Decky) - tokio proprio numa
@@ -29,9 +31,21 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time"]
 # Leitura de processos do host - mesmo padrao de matching "AppId=<id>" no
 # cmdline que main.py:_build_prep_cmd ja usa no pkill do undo.
 sysinfo = "0.32"
+# Parsing do libraryfolders.vdf/appmanifest_*.acf (formato texto VDF/
+# KeyValues da Valve) pra enumerar os jogos Steam instalados no host.
+keyvalues-serde = "0.2"
+# appmanifest_*.acf nao tem campo de categoria (jogo vs software/ferramenta)
+# - so' a API publica da propria Steam (appdetails) diz o "type" de
+# verdade. Unico motivo do Runner precisar falar com a internet.
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 # So' pro ServiceExt::oneshot nos testes (bate direto no Router, sem
 # precisar abrir uma porta TCP de verdade).
 tower = { version = "0.5", features = ["util"] }
+# Pastas temporarias pros testes de games.rs (fixture de instalacao Steam fake).
+tempfile = "3"
+# Mocka a API da Steam nos testes - sem isso os testes dependeriam de rede
+# de verdade (lento, instavel, sujeito a rate limit).
+wiremock = "0.6"
 

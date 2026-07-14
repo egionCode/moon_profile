@@ -9,9 +9,21 @@
 // numa LAN domestica ja confiavel, o atrito de colar um token na config
 // do Deck nao compensa o ganho de seguranca).
 
-use axum::{extract::Query, routing::get, Json, Router};
+use axum::{extract::Extension, extract::Query, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+use tokio::sync::mpsc;
+
+use crate::games::{list_host_games, HostGame};
+
+// Sinaliza pra lib.rs (que TEM o AppHandle de verdade) disparar a
+// notificacao de desktop - o handler axum em si so' manda um pulso, nao
+// conhece Tauri/AppHandle nenhum. Decoupled assim de proposito: usar
+// AppHandle direto aqui exigiria testes com tauri::test::mock_builder
+// (generico sobre o Runtime, MUITO mais complexo pra testar uma
+// notificacao) - um canal simples e' trivial de testar (so' cria um par
+// e ignora o receiver).
+pub type SyncNotifier = mpsc::UnboundedSender<()>;
 
 #[derive(Deserialize)]
 struct StatusQuery {
@@ -67,16 +79,26 @@ async fn session_status(Query(query): Query<StatusQuery>) -> Json<StatusResponse
     Json(StatusResponse { running })
 }
 
-fn app() -> Router {
-    Router::new().route("/session/status", get(session_status))
+// "quando receber uma chamada de sincronia" - dispara o pulso ANTES de
+// montar a resposta, no exato momento em que o Deck de fato pediu a lista.
+async fn games(Extension(notify): Extension<SyncNotifier>) -> Json<Vec<HostGame>> {
+    let _ = notify.send(());
+    Json(list_host_games().await)
 }
 
-pub async fn run_server() {
+fn app(notify: SyncNotifier) -> Router {
+    Router::new()
+        .route("/session/status", get(session_status))
+        .route("/games", get(games))
+        .layer(Extension(notify))
+}
+
+pub async fn run_server(notify: SyncNotifier) {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:47991")
         .await
         .expect("failed to bind runner HTTP server to port 47991");
 
-    axum::serve(listener, app())
+    axum::serve(listener, app(notify))
         .await
         .expect("runner HTTP server crashed");
 }
@@ -128,8 +150,13 @@ mod tests {
         }
     }
 
+    fn test_app() -> Router {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        app(tx)
+    }
+
     async fn query_status(app_id: &str) -> (StatusCode, StatusResponse) {
-        let response = app()
+        let response = test_app()
             .oneshot(
                 Request::builder()
                     .uri(format!("/session/status?app_id={app_id}"))
@@ -179,6 +206,51 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert!(!body.running);
+    }
+
+    // So confirma que a rota esta' registrada e devolve um JSON valido - a
+    // logica de parsing dos jogos em si (as fixtures de VDF, o caso de
+    // "libraryfolders.vdf ausente", etc) ja' e' coberta a fundo em
+    // games.rs; duplicar isso aqui so' testaria a mesma coisa duas vezes.
+    #[tokio::test]
+    async fn games_route_returns_a_json_array() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/games")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let _games: Vec<crate::games::HostGame> = serde_json::from_slice(&bytes).unwrap();
+    }
+
+    // "quando receber uma chamada de sincronia" - o handler manda um pulso
+    // pro canal a cada GET /games, que lib.rs escuta pra disparar a
+    // notificacao de desktop de verdade (com AppHandle real, fora do
+    // alcance deste teste - testar so' o sinal, nao a notificacao em si,
+    // evita precisar de tauri::test::mock_builder generico sobre Runtime).
+    #[tokio::test]
+    async fn games_route_sends_a_sync_notification_pulse() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let _ = app(tx)
+            .oneshot(
+                Request::builder()
+                    .uri("/games")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(rx.try_recv().is_ok(), "esperava um pulso no canal apos GET /games");
     }
 
     #[tokio::test]
