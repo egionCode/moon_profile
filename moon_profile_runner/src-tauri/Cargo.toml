@@ -39,6 +39,9 @@ keyvalues-serde = "0.2"
 # verdade. Tambem usado (feature "cookies") pro fechamento autonomo de
 # sessao falar com o Apollo (cookie de sessao "auth", ver src/apollo.rs).
 reqwest = { version = "0.12", features = ["json", "cookies"] }
+# So' pro timestamp nos logs de diagnostico (session.rs/server.rs) - "clock"
+# e' a unica feature necessaria (hora local), sem parsing/timezone extra.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 # So' pro ServiceExt::oneshot nos testes (bate direto no Router, sem

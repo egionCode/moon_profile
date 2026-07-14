@@ -16,6 +16,14 @@ use tokio::sync::mpsc;
 use crate::games::{list_host_games, HostGame};
 use crate::session::{close_session_now, register_session, ApolloBaseUrl, SessionState};
 
+// So' pros prints de diagnostico (register/watchdog/close) - sem isso os
+// logs no console do "tauri dev" nao davam pra saber EM QUE SEGUNDO cada
+// coisa aconteceu (relevante pro watchdog, que roda a cada poucos
+// segundos).
+pub(crate) fn timestamp() -> String {
+    chrono::Local::now().format("%H:%M:%S%.3f").to_string()
+}
+
 // Eventos que server.rs/session.rs sinalizam pra lib.rs (que TEM o
 // AppHandle de verdade) disparar notificacoes de desktop - os handlers
 // axum em si nao conhecem Tauri/AppHandle nenhum. Decoupled assim de
@@ -76,7 +84,7 @@ pub(crate) fn is_app_id_running(app_id: &str) -> bool {
 // "quando receber uma chamada de sincronia" - dispara o pulso ANTES de
 // montar a resposta, no exato momento em que o Deck de fato pediu a lista.
 async fn games(Extension(notify): Extension<EventNotifier>) -> Json<Vec<HostGame>> {
-    println!("[server] GET /games (sincronizacao pedida pelo Deck)");
+    println!("[{}] [server] GET /games (sincronizacao pedida pelo Deck)", timestamp());
     let _ = notify.send(RunnerEvent::GamesSynced);
     Json(list_host_games().await)
 }
@@ -95,7 +103,7 @@ pub async fn run_server(notify: EventNotifier, session_state: SessionState, apol
     let listener = tokio::net::TcpListener::bind("0.0.0.0:47991")
         .await
         .expect("failed to bind runner HTTP server to port 47991");
-    println!("[server] MoonProfile Runner escutando em 0.0.0.0:47991");
+    println!("[{}] [server] MoonProfile Runner escutando em 0.0.0.0:47991", timestamp());
 
     axum::serve(listener, app(notify, session_state, apollo_base_url))
         .await

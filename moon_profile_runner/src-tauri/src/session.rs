@@ -22,7 +22,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 use crate::apollo;
-use crate::server::{is_app_id_running, EventNotifier, RunnerEvent};
+use crate::server::{is_app_id_running, timestamp, EventNotifier, RunnerEvent};
 
 #[derive(Clone)]
 pub struct ActiveSession {
@@ -55,7 +55,7 @@ pub async fn register_session(
     Extension(state): Extension<SessionState>,
     Json(req): Json<RegisterSessionRequest>,
 ) -> Json<CloseResponse> {
-    println!("[session] registrada: app_id={}", req.app_id);
+    println!("[{}] [session] registrada: app_id={}", timestamp(), req.app_id);
     let mut guard = state.lock().await;
     *guard = Some(ActiveSession {
         app_id: req.app_id,
@@ -76,23 +76,23 @@ pub async fn close_session_now(
     let session = { state.lock().await.clone().map(|s| (s.username, s.password)) };
 
     let Some((username, password)) = session else {
-        println!("[session] fechamento manual pedido, mas nao ha sessao registrada");
+        println!("[{}] [session] fechamento manual pedido, mas nao ha sessao registrada", timestamp());
         return Json(CloseResponse {
             ok: false,
             error: Some("Nenhuma sessao registrada no Runner".to_string()),
         });
     };
 
-    println!("[session] fechamento manual pedido - chamando o Apollo");
+    println!("[{}] [session] fechamento manual pedido - chamando o Apollo", timestamp());
     match apollo::close_session_at(&base_url, &username, &password).await {
         Ok(()) => {
-            println!("[session] Apollo fechou a sessao com sucesso (fechamento manual)");
+            println!("[{}] [session] Apollo fechou a sessao com sucesso (fechamento manual)", timestamp());
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
             Json(CloseResponse { ok: true, error: None })
         }
         Err(error) => {
-            println!("[session] Apollo falhou ao fechar (fechamento manual): {error}");
+            println!("[{}] [session] Apollo falhou ao fechar (fechamento manual): {error}", timestamp());
             Json(CloseResponse { ok: false, error: Some(error) })
         }
     }
@@ -118,21 +118,24 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
     };
 
     let running = is_app_id_running(&app_id);
-    println!("[session] watchdog: checando app_id={app_id}, rodando={running}");
+    println!("[{}] [session] watchdog: checando app_id={app_id}, rodando={running}", timestamp());
     if running {
         return false;
     }
 
-    println!("[session] watchdog: app_id={app_id} nao esta mais rodando, fechando no Apollo");
+    println!("[{}] [session] watchdog: app_id={app_id} nao esta mais rodando, fechando no Apollo", timestamp());
     match apollo::close_session_at(base_url, &username, &password).await {
         Ok(()) => {
-            println!("[session] watchdog: Apollo fechou a sessao com sucesso");
+            println!("[{}] [session] watchdog: Apollo fechou a sessao com sucesso", timestamp());
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
             true
         }
         Err(error) => {
-            println!("[session] watchdog: Apollo falhou ao fechar ({error}) - tenta de novo no proximo tick");
+            println!(
+                "[{}] [session] watchdog: Apollo falhou ao fechar ({error}) - tenta de novo no proximo tick",
+                timestamp()
+            );
             false
         }
     }
