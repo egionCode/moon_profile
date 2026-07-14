@@ -23,11 +23,15 @@ APOLLO_PORT = 47990
 CODEC_FLAGS = {"HEVC": "HEVC", "AV1": "AV1", "H264": "H.264"}
 
 
-def detect_context() -> str:
-    """Retorna 'docked' se algum display externo estiver conectado, senao 'handheld'."""
+def detect_context(drm_path: str = "/sys/class/drm") -> str:
+    """Retorna 'docked' se algum display externo estiver conectado, senao 'handheld'.
+
+    drm_path e' configuravel pra permitir testar contra uma fixture (uma
+    pasta fake com a mesma estrutura de /sys/class/drm) em vez de depender
+    do hardware de verdade da maquina rodando o teste.
+    """
     import os
 
-    drm_path = "/sys/class/drm"
     for entry in os.listdir(drm_path):
         if not entry.startswith("card"):
             continue
