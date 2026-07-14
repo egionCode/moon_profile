@@ -190,12 +190,49 @@ Risco: parte mais frágil, quebra entre versões do Steam client. Estudar códig
 ### Fase 4: Polish
 
 Objetivos (sem ordem específica, escolher conforme uso real):
-- Notificações persistentes durante stream ativo
-- Tratamento de erro (host offline, credenciais erradas, Apollo não respondendo)
-- Ícone customizado no menu do Decky
-- Detecção de OLED vs LCD do Deck (se relevante pros perfis)
-- Suporte a múltiplos hosts (não apenas um)
-- Logs internos acessíveis pela UI
+- ~~Notificações persistentes durante stream ativo / detecção de fim de sessão~~ - movido pra Fase 5 (precisa do daemon no host, ver abaixo). A ideia original de pollar `current_app` do Apollo **não funciona** - motivo documentado na Fase 5.
+- ✅ Tratamento de erro (host offline, credenciais erradas, Apollo não respondendo) - `main.py:_apollo_error_response`, diferencia os 3 casos (confirmado 401 = credencial errada lendo `confighttp.cpp` do Apollo).
+- ✅ Ícone customizado no menu do Decky (`FaSatelliteDish`, já feito)
+- ✅ Logs internos acessíveis pela UI - aba "Logs" na sidenav de Configurações, lê `decky.DECKY_PLUGIN_LOG` sob demanda.
+- ❌ Descartado: detecção de OLED vs LCD do Deck - sem caso de uso concreto que justifique (só mudaria defaults de FPS/HDR no perfil handheld; usuário já configura isso manualmente sem problema).
+- ❌ Descartado por agora: suporte a múltiplos hosts - usuário só usa um host Apollo hoje, sem necessidade real. Reconsiderar se isso mudar.
+
+Fase 4 encerrada com o que fazia sentido implementar agora.
+
+### Fase 4.5: Suporte a jogos non-Steam e atalhos por jogo
+
+Duas features levantadas em uso real, adiadas de propósito (aumentam bastante o escopo pra valer a pena antes de validar o resto no dia a dia). Ambas estudadas contra o código do MoonDeck/MoonDeck Buddy, sem adotar a arquitetura deles (ver decisão abaixo).
+
+Objetivos:
+- **Suporte a jogos non-Steam.** Hoje `stream_game(app_id)` usa o MESMO id pra achar a página no Deck (patch da Fase 3) e pra montar o `cmd`/`pkill` no host (`main.py:216,219`). Isso só funciona porque appids de jogos de catálogo Steam são globais (mesmo número em qualquer instalação) - pra um atalho non-Steam (Epic, GOG, emulador) o id é um hash local, diferente em cada máquina. Fix: separar `deck_app_id` (só serve pra achar o perfil/página no Deck) de `host_app_id` (usado no `cmd`/`pkill` do Apollo) no schema de perfil, com o segundo como campo opcional preenchido manualmente quando o jogo não é Steam "de verdade". Convenção pro usuário: criar o atalho non-Steam no client Steam do HOST primeiro (igual precisaria fazer pra usar Sunshine/Apollo mesmo sem o MoonProfile).
+- **Atalhos por jogo + "Jogado recentemente".** Trocar o atalho Steam compartilhado (`steamShortcut.ts`) por um atalho por jogo faria o Deck mostrar cada jogo streamado separadamente em "Jogado recentemente", em vez de um único "MoonProfile Launcher" genérico. Estudado o mecanismo real do MoonDeck (`AppOverviewPatcher`, `MoonDeckAppShortcuts`): não é só criar N atalhos, eles mantêm um `BiMap` atalho↔jogo e fazem monkey-patch ao vivo do campo `rt_last_time_locally_played` no app store da Steam via `appStoreEx.observe()`/`intercept()`, com detecção de corrupção de cache e purga+reinício do client Steam como fallback. Genuinamente um dos subsistemas mais complexos do MoonDeck inteiro - vale a pena, mas não é trivial.
+
+Decisão explícita (registrada pra não repetir a discussão depois): **não forkar o MoonDeck nem o Buddy.** A arquitetura deles pressupõe exatamente os dois itens que este projeto existe pra evitar (daemon extra no host via Buddy, ausência de perfis contextuais - ver Motivação). Forkar herdaria a dependência do Buddy e ainda exigiria enxertar perfis automáticos num código C++/TS desconhecido - mais trabalho, não menos. A estratégia continua sendo: ler o código deles como referência pontual (como já feito pro botão da tela do jogo e pro fix do `gameid`), implementar direto no stack Apollo + Python + React já validado.
+
+### Fase 5: MoonProfile Buddy (daemon no host)
+
+Mudança de arquitetura deliberada, adiada pra ser projetada com calma numa fase própria - **não é só mais um item da Fase 4**, é abrir mão do diferencial "zero componente adicional" (Motivação/Diferencial, no topo deste documento) em troca de robustez real.
+
+**Por que isso passou a ser necessário** (achado técnico, não repetir a investigação): tentamos resolver detecção de fim de sessão via *polling* de `GET /api/apps` (campo `current_app`), a solução que a Fase 4 original previa. Não funciona. Lendo o código do Apollo (`ClassicOldSong/Apollo`, `src/process.cpp`, função `proc_t::running()`):
+
+```cpp
+} else if (_app.auto_detach && std::chrono::steady_clock::now() - _app_launch_time < 5s) {
+  // "App exited within 5 seconds of launch. Treating the app as a detached command."
+  placebo = true;
+  return _app_id;  // dai em diante, "rodando" pra sempre
+}
+```
+
+Nosso `stream_game()` usa `"auto-detach": true` justamente porque `cmd: "steam steam://rungameid/{app_id}"` retorna quase na hora (é só um relay pro client Steam - o jogo real roda solto, desprendido). Isso é exatamente o gatilho do `placebo = true`: uma vez nesse modo, `running()` **nunca mais volta a zero sozinho**, então `current_app` fica preso "rodando" até alguém chamar `close_app` manualmente (nosso "Fechar conexão"). Não tem workaround de polling que resolva isso - o dado que estaríamos lendo simplesmente não reflete a realidade.
+
+**O que um daemon no host resolveria de verdade:**
+- Detecção de fim de sessão checando o processo diretamente (`pgrep`/API nativa do SO), independente do `placebo`/`auto-detach` do Apollo.
+- Enumeração de jogos non-Steam do host (sem depender do usuário criar atalhos manualmente - resolve boa parte da Fase 4.5 de outra forma).
+- Checagem de prontidão do host antes de iniciar o stream (GPU/encoder disponível, sessão Plasma ativa, etc).
+
+**Alternativa mais barata considerada e descartada por ora:** trocar `cmd` por um script estático (não um serviço) que bloqueia até o jogo fechar de verdade, tirando o app do modo `placebo` sem precisar de um daemon persistente. Resolveria só a detecção de fim de sessão, não as outras duas features. Decisão do usuário: vale mais a pena projetar o daemon completo numa fase própria do que resolver só uma parte agora.
+
+**Ainda em aberto (a decidir quando essa fase começar):** linguagem/stack do daemon (Python stdlib, consistente com o resto do projeto, é o candidato natural), protocolo de comunicação com o plugin (REST próprio? reusar alguma coisa do Apollo?), autenticação/pareamento, mecanismo de instalação (serviço systemd do usuário, não root), e o que exatamente ele expõe primeiro.
 
 ## Referências técnicas
 
