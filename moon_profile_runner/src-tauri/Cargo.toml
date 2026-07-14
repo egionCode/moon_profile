@@ -27,7 +27,9 @@ serde_json = "1"
 # Servidor HTTP embutido (fala com o plugin Decky) - tokio proprio numa
 # thread separada, decoupled do event loop do Tauri (ver setup() em lib.rs).
 axum = "0.7"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time"] }
+# "process": pra rodar os comandos de restauracao de tela (kscreen-doctor)
+# direto do watchdog de fechamento autonomo (ver session.rs).
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time", "process"] }
 # Leitura de processos do host - mesmo padrao de matching "AppId=<id>" no
 # cmdline que main.py:_build_prep_cmd ja usa no pkill do undo.
 sysinfo = "0.32"

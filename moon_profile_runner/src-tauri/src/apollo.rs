@@ -41,19 +41,22 @@ fn unreachable_message(base_url: &str) -> String {
     format!("Nao consegui alcancar o Apollo em {base_url} - confira se o host esta ligado")
 }
 
-// base_url e' parametro (em vez de sempre DEFAULT_APOLLO_BASE_URL) pra
-// permitir apontar pra um wiremock::MockServer nos testes, mesmo padrao
-// ja usado em games.rs (STEAM_STORE_BASE_URL).
-pub async fn close_session_at(base_url: &str, username: &str, password: &str) -> Result<(), String> {
-    let client = build_client()?;
-
-    let login_resp = client
+async fn login(client: &Client, base_url: &str, username: &str, password: &str) -> Result<(), String> {
+    let resp = client
         .post(format!("{base_url}/api/login"))
         .json(&json!({"username": username, "password": password}))
         .send()
         .await
         .map_err(|_| unreachable_message(base_url))?;
-    classify_status(login_resp.status())?;
+    classify_status(resp.status())
+}
+
+// base_url e' parametro (em vez de sempre DEFAULT_APOLLO_BASE_URL) pra
+// permitir apontar pra um wiremock::MockServer nos testes, mesmo padrao
+// ja usado em games.rs (STEAM_STORE_BASE_URL).
+pub async fn close_session_at(base_url: &str, username: &str, password: &str) -> Result<(), String> {
+    let client = build_client()?;
+    login(&client, base_url, username, password).await?;
 
     let close_resp = client
         .post(format!("{base_url}/api/apps/close"))
@@ -64,6 +67,25 @@ pub async fn close_session_at(base_url: &str, username: &str, password: &str) ->
     classify_status(close_resp.status())?;
 
     Ok(())
+}
+
+// Reconfigura o app "SteamGame" com um payload OPACO (montado por
+// runner.py, ver _quick_close_payload em runner.py) - normalmente com
+// "prep-cmd": [] pra neutralizar o array de undo do Apollo antes do
+// fechamento autonomo (ver session.rs). O Runner nao interpreta o
+// payload, so' repassa pro Apollo - quem decide o que vai nele e' o
+// Deck, que ja tem todo o contexto (uuid, perfil) na hora do lancamento.
+pub async fn save_app_at(base_url: &str, username: &str, password: &str, payload: &serde_json::Value) -> Result<(), String> {
+    let client = build_client()?;
+    login(&client, base_url, username, password).await?;
+
+    let resp = client
+        .post(format!("{base_url}/api/apps"))
+        .json(payload)
+        .send()
+        .await
+        .map_err(|_| unreachable_message(base_url))?;
+    classify_status(resp.status())
 }
 
 #[cfg(test)]
@@ -134,5 +156,39 @@ mod tests {
             result,
             Err("Nao consegui alcancar o Apollo em http://127.0.0.1:0 - confira se o host esta ligado".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn save_app_at_posts_the_payload_as_is_to_api_apps() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/login"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/apps"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let payload = json!({"name": "SteamGame", "prep-cmd": []});
+        let result = save_app_at(&mock_server.uri(), "user", "pass", &payload).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn save_app_at_reports_wrong_credentials_on_401() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/login"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let result = save_app_at(&mock_server.uri(), "user", "wrong", &json!({})).await;
+
+        assert_eq!(result, Err("Usuario ou senha do Apollo incorretos".to_string()));
     }
 }
