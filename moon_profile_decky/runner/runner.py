@@ -31,6 +31,7 @@ import os
 import sys
 import json
 import urllib.error
+import urllib.request
 
 # runner.py fica em <PLUGIN_DIR>/runner/runner.py - py_modules e' irmao de
 # runner/. Nao roda via Decky Loader (Steam executa direto), entao
@@ -41,6 +42,7 @@ _PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_PLUGIN_DIR, "py_modules"))
 
 from moonprofile_core import (  # noqa: E402 (import depois do sys.path.insert e' intencional)
+    RUNNER_PORT,
     ApolloClient,
     CODEC_FLAGS,
     build_prep_cmd,
@@ -111,6 +113,35 @@ def configure_apollo(host_app_id: str) -> dict:
     return {"config": config, "profile": profile}
 
 
+def register_with_runner(config: dict, host_app_id: str) -> None:
+    """
+    Avisa o MoonProfile Runner (daemon no host) que esta sessao comecou -
+    credenciais em memoria, nunca gravadas em disco no host (ver
+    session.rs). Dai o Runner fica de olho no processo sozinho (sysinfo)
+    e fecha/desfaz no Apollo quando detectar que o jogo fechou, sem
+    precisar do Deck perguntar nada. Best-effort: o Runner e' opcional -
+    falha aqui NAO deve impedir o jogo de rodar (so' significa que
+    "Fechar conexao" e o auto-fechamento vao cair no caminho antigo,
+    Deck falando com o Apollo direto - ver main.py:stop_stream).
+    """
+    try:
+        body = json.dumps({
+            "app_id": host_app_id,
+            "username": config["username"],
+            "password": config["password"],
+        }).encode()
+        req = urllib.request.Request(
+            f"http://{config['host']}:{config.get('runner_port', RUNNER_PORT)}/session/register",
+            data=body,
+            method="POST",
+        )
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except (urllib.error.URLError, OSError) as e:
+        print(f"Nao consegui registrar a sessao no Runner (seguindo sem ele): {e}", file=sys.stderr)
+
+
 def main() -> None:
     host_app_id = os.environ.get("MOONPROFILE_HOST_APP_ID")
     if not host_app_id:
@@ -146,6 +177,7 @@ def main() -> None:
         sys.exit(1)
 
     config = result["config"]
+    register_with_runner(config, host_app_id)
     moonlight_cfg = result["profile"]["moonlight"]
     codec_flag = CODEC_FLAGS.get(moonlight_cfg["codec"], "auto")
     hdr_flag = "--hdr" if moonlight_cfg.get("hdr") else "--no-hdr"

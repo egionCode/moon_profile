@@ -17,6 +17,7 @@ import urllib.request
 import urllib.error
 
 APOLLO_PORT = 47990
+RUNNER_PORT = 47991
 
 # Mapeamento pro flag --video-codec do moonlight CLI: nosso modelo de dados
 # usa "H264" (sem ponto) mas o CLI espera "H.264" literal.

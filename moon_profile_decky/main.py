@@ -6,10 +6,9 @@ import urllib.request
 import urllib.error
 
 import decky
-from moonprofile_core import ApolloClient, classify_apollo_error, detect_context
+from moonprofile_core import RUNNER_PORT, ApolloClient, classify_apollo_error, detect_context
 
 APP_NAME = "SteamGame"
-RUNNER_PORT = 47991
 
 # Mesma posicao que ja estava hardcoded no GameActionButton.tsx (canto
 # inferior esquerdo, com um respiro da borda) - agora e' so o default
@@ -40,29 +39,34 @@ def _streaming_collection_path() -> str:
 class RunnerClient:
     """
     Cliente minimo pro MoonProfile Runner (daemon Tauri/Rust rodando no
-    host, ver moon_profile_runner/) - checa se o processo do jogo ainda
-    esta rodando (suprindo a deteccao de fim de sessao que o Apollo nao
-    consegue fazer sozinho - Fase 5 do PRD: auto-detach do stream_game
+    host, ver moon_profile_runner/) - lista os jogos Steam instalados no
+    host (pros atalhos por jogo - ver gameShortcuts.ts/gameSync.ts) e pede
+    o fechamento da sessao ativa (o Runner sozinho detecta fim de sessao
+    via processo real do SO - Fase 5 do PRD: auto-detach do stream_game
     entra em modo "placebo" no Apollo depois de 5s, current_app nunca mais
-    reflete a realidade) e lista os jogos Steam instalados no host (pros
-    atalhos por jogo - ver gameShortcuts.ts/gameSync.ts). Sem autenticacao -
-    servidor aberto na rede local (decisao explicita: numa LAN domestica ja
-    confiavel, o atrito de colar um token na config nao compensa o ganho
-    de seguranca).
+    reflete a realidade - mas fechar manualmente tambem passa por aqui,
+    reaproveitando a mesma sessao registrada por runner.py). Sem
+    autenticacao - servidor aberto na rede local (decisao explicita: numa
+    LAN domestica ja confiavel, o atrito de colar um token na config nao
+    compensa o ganho de seguranca).
     """
 
     def __init__(self, host: str, port: int):
         self.base_url = f"http://{host}:{port}"
 
-    def session_running(self, app_id) -> bool:
-        req = urllib.request.Request(f"{self.base_url}/session/status?app_id={app_id}")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-            return bool(data.get("running", True))
-
     def list_games(self) -> list:
         req = urllib.request.Request(f"{self.base_url}/games")
         with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    def close_session(self) -> dict:
+        # Sem corpo - o Runner ja tem host_app_id/credenciais guardados em
+        # memoria desde que runner.py registrou a sessao no lancamento
+        # (ver session.rs). Se nao houver sessao registrada, o Runner
+        # responde {"ok": False, "error": "..."} (nao levanta excecao) -
+        # quem chama decide se cai pro caminho antigo (Apollo direto).
+        req = urllib.request.Request(f"{self.base_url}/session/close", data=b"", method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read())
 
 
@@ -193,41 +197,38 @@ class Plugin:
         }
 
     async def stop_stream(self) -> dict:
+        # Prefere o Runner (host): ele ja tem a sessao registrada por
+        # runner.py no lancamento (app_id + credenciais em memoria) e sabe
+        # fechar/desfazer no Apollo sozinho. So' cai pro caminho antigo
+        # (Deck falando com o Apollo direto) se o Runner estiver
+        # inalcancavel ou nao tiver nenhuma sessao registrada (ele e'
+        # opcional - continua funcionando pra quem nao instalou, e cobre o
+        # caso de o Runner ter reiniciado no meio de uma sessao).
         config = await self.get_config()
         if not config.get("host"):
             return {"ok": False, "error": "Configure o host do Apollo primeiro"}
-        try:
-            client = ApolloClient(config["host"], config["username"], config["password"])
-            client.login()
-            client.close_app()
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.error(f"Falha ao fechar sessao no Apollo: {e}")
-            return _apollo_error_response(config["host"], e)
-        return {"ok": True}
 
-    async def check_session_status(self, app_id: int) -> dict:
-        # Chamado pelo frontend em polling enquanto uma sessao esta ativa
-        # (ver stream.ts), pra detectar quando o jogo fecha por dentro sem
-        # passar por "Fechar conexao". Se o host do Apollo nao estiver
-        # configurado ou o Runner ficar inalcancavel, assume "ainda
-        # rodando" (running=True) - nao queremos fechar a sessao por
-        # engano so' porque o daemon caiu ou nunca foi instalado (fallback
-        # seguro, equivalente a nao ter essa feature ainda).
-        #
-        # Mesmo host do Apollo (config["host"]) - Runner e Apollo sempre
-        # rodam na mesma maquina, nao faz sentido pedir o IP duas vezes.
-        config = await self.get_config()
-        host = config.get("host")
-        if not host:
-            return {"ok": False, "running": True}
+        host = config["host"]
+        username = config["username"]
+        password = config["password"]
 
         try:
             client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
-            running = client.session_running(app_id)
-            return {"ok": True, "running": running}
+            result = client.close_session()
+            if result.get("ok"):
+                return result
+            decky.logger.info(f"Runner sem sessao ativa pra fechar ({result.get('error')}), tentando Apollo direto")
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.error(f"Falha ao falar com o MoonProfile Runner: {e}")
-            return {"ok": False, "running": True}
+            decky.logger.info(f"Runner inalcancavel pra fechar sessao ({e}), tentando Apollo direto")
+
+        try:
+            apollo = ApolloClient(host, username, password)
+            apollo.login()
+            apollo.close_app()
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            decky.logger.error(f"Falha ao fechar sessao no Apollo: {e}")
+            return _apollo_error_response(host, e)
+        return {"ok": True}
 
     async def list_host_games(self) -> dict:
         # Chamado pelo frontend (gameSync.ts) pro botao "Sincronizar jogos

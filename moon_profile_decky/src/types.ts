@@ -54,11 +54,6 @@ export interface StreamResult {
   launch_env?: Record<string, string>;
 }
 
-export interface SessionStatus {
-  ok: boolean;
-  running: boolean;
-}
-
 // Um jogo listado pelo MoonProfile Runner (ver moon_profile_runner/src-tauri/
 // src/games.rs) - Estagio A: so' jogos Steam reais (is_steam sempre true por
 // enquanto, non-Steam fica pro Estagio B).
