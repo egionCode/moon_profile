@@ -199,20 +199,13 @@ Objetivos (sem ordem específica, escolher conforme uso real):
 
 Fase 4 encerrada com o que fazia sentido implementar agora.
 
-### Fase 4.5: Atalhos por jogo e "Jogado recentemente"
-
-Feature 100% client-side (Deck), sem relação com o daemon da Fase 5 - adiada por complexidade própria, não por dependência de outra fase.
-
-Objetivo:
-- **Atalhos por jogo + "Jogado recentemente".** Trocar o atalho Steam compartilhado (`steamShortcut.ts`) por um atalho por jogo faria o Deck mostrar cada jogo streamado separadamente em "Jogado recentemente", em vez de um único "MoonProfile Launcher" genérico. Estudado o mecanismo real do MoonDeck (`AppOverviewPatcher`, `MoonDeckAppShortcuts`): não é só criar N atalhos, eles mantêm um `BiMap` atalho↔jogo e fazem monkey-patch ao vivo do campo `rt_last_time_locally_played` no app store da Steam via `appStoreEx.observe()`/`intercept()`, com detecção de corrupção de cache e purga+reinício do client Steam como fallback. Genuinamente um dos subsistemas mais complexos do MoonDeck inteiro - vale a pena, mas não é trivial.
-
-Decisão explícita (registrada pra não repetir a discussão depois): **não forkar o MoonDeck nem o Buddy.** A arquitetura deles pressupõe exatamente os dois itens que este projeto existia pra evitar (daemon extra no host via Buddy, ausência de perfis contextuais - ver Motivação) - só que agora a Fase 5 também abriu mão do primeiro item, deliberadamente. Ainda assim, forkar herdaria uma arquitetura C++/Qt desconhecida e perfis não-contextuais - mais trabalho, não menos. A estratégia continua sendo: ler o código deles como referência pontual (como já feito pro botão da tela do jogo, pro fix do `gameid`, e pra API de tray/menu do Tauri), implementar direto no stack já validado.
-
 ### Fase 5: MoonProfile Runner (daemon no host, Tauri/Rust)
 
 Mudança de arquitetura deliberada - abre mão do diferencial "zero componente adicional" (Motivação/Diferencial, no topo deste documento) em troca de robustez real. Como não é um plugin Decky, não tem nenhuma das restrições da Decky Plugin Store (inclusive a de "maioria do código não pode ter sido escrita por IA" - checkbox obrigatório no PR template do `decky-plugin-database`) - por isso a stack é livre, escolhida sem essa amarra: **Tauri v2 (Rust)**, com tray icon + janela sob demanda.
 
-**Por que isso passou a ser necessário** (achado técnico, não repetir a investigação): tentamos resolver detecção de fim de sessão via *polling* de `GET /api/apps` (campo `current_app`), a solução que a Fase 4 original previa. Não funciona. Lendo o código do Apollo (`ClassicOldSong/Apollo`, `src/process.cpp`, função `proc_t::running()`):
+Fase única (absorveu a antiga "Fase 4.5" - eram itens separados só por não depender tecnicamente um do outro, mas fazem parte do mesmo esforço de amadurecer o lado host/game-management do projeto).
+
+**Por que o daemon passou a ser necessário** (achado técnico, não repetir a investigação): tentamos resolver detecção de fim de sessão via *polling* de `GET /api/apps` (campo `current_app`), a solução que a Fase 4 original previa. Não funciona. Lendo o código do Apollo (`ClassicOldSong/Apollo`, `src/process.cpp`, função `proc_t::running()`):
 
 ```cpp
 } else if (_app.auto_detach && std::chrono::steady_clock::now() - _app_launch_time < 5s) {
@@ -224,20 +217,25 @@ Mudança de arquitetura deliberada - abre mão do diferencial "zero componente a
 
 Nosso `stream_game()` usa `"auto-detach": true` justamente porque `cmd: "steam steam://rungameid/{app_id}"` retorna quase na hora (é só um relay pro client Steam - o jogo real roda solto, desprendido). Isso é exatamente o gatilho do `placebo = true`: uma vez nesse modo, `running()` **nunca mais volta a zero sozinho**, então `current_app` fica preso "rodando" até alguém chamar `close_app` manualmente (nosso "Fechar conexão"). Não tem workaround de polling que resolva isso - o dado que estaríamos lendo simplesmente não reflete a realidade.
 
-**Primeira fatia - ✅ implementada:**
-- `moon_profile_runner/` (projeto Tauri v2 completo, monorepo irmão de `moon_profile_decky/`): tray icon (`TrayIconBuilder`) + janela sob demanda (`tauri.conf.json` com `windows: []`, janela criada ao clicar no tray) mostrando um token de pareamento persistido em `app_data_dir`.
-- Servidor HTTP embutido (`axum`, numa thread + runtime `tokio` própria, separada do event loop do Tauri) na porta `47991`, endpoint `GET /session/status?app_id=<id>` autenticado por token num header (`X-Moonprofile-Token`) - usa a crate `sysinfo` pra procurar um processo com `AppId=<id>` no cmdline, **mesma convenção que `main.py:_build_prep_cmd` já usa no `pkill` do undo**, só que lendo em vez de matando.
+**Primeira fatia - ✅ implementada (detecção de fim de sessão):**
+- `moon_profile_runner/` (projeto Tauri v2 completo, monorepo irmão de `moon_profile_decky/`): tray icon (`TrayIconBuilder`) + janela sob demanda (`tauri.conf.json` com `windows: []`, janela criada ao clicar no tray).
+- Servidor HTTP embutido (`axum`, numa thread + runtime `tokio` própria, separada do event loop do Tauri) na porta `47991`, endpoint `GET /session/status?app_id=<id>` - usa a crate `sysinfo` pra procurar um processo com `AppId=<id>` no cmdline, **mesma convenção que `main.py:_build_prep_cmd` já usa no `pkill` do undo**, só que lendo em vez de matando. Sem autenticação - servidor aberto na rede local (decisão explícita: numa LAN doméstica já confiável, o atrito de token não compensa o ganho).
+- Testes automatizados (`cargo test`, ver `server.rs`) - já pegaram dois bugs reais rodando contra o SO de verdade: `refresh_processes()` sem `cmd()` populado, e match por substring colidindo com prefixo numérico compartilhado entre AppIds diferentes.
 - `main.py`: `RunnerClient` (stdlib, mesmo espírito do `ApolloClient`) + `check_session_status(app_id)`, com fallback seguro (`running: true`) se o runner não estiver configurado ou ficar inalcançável - nunca fecha uma sessão por engano só porque o daemon caiu.
 - Frontend (`stream.ts`): polling a cada 5s enquanto uma sessão está ativa (`watchSession`), cancelado tanto quando detecta fim de sessão quanto quando o usuário clica "Fechar conexão" manualmente (`stopSessionWatch`, chamado também em `QuickAccessContent.tsx`).
-- Nova aba "Runner" na sidenav de Configurações (`RunnerConfigSection.tsx`) pra colar host/porta/token.
+- Nova aba "Runner" na sidenav de Configurações (`RunnerConfigSection.tsx`) pra colar host/porta.
 - Autostart via `~/.config/autostart/*.desktop` (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`) - não systemd, o app precisa de sessão gráfica ativa pra mostrar o tray.
-- Sem certificado/pareamento TLS por enquanto - só o token simples (mesmo nível de proteção que usuário/senha do Apollo hoje, rede local).
 
-**Fora de escopo desta fatia (próximos passos, UI já com espaço reservado):**
-- Enumeração de jogos non-Steam do host (superaria o item equivalente que existia na Fase 4.5 - o usuário não precisaria mais criar atalho non-Steam manualmente no host).
+**Ainda não validado com o Apollo/Deck reais** - só testado com processo fake isolado via `cargo test`. Falta: instalar de verdade (`./install.sh`), configurar host/porta no Deck, dar stream, fechar o jogo por dentro sem clicar "Fechar conexão" e confirmar que a sessão encerra sozinha.
+
+**Próximos passos (UI já com espaço reservado, objetivos que antes estavam na "Fase 4.5"):**
+- **Enumeração de jogos non-Steam do host.** O Runner listaria os jogos (Steam e non-Steam) direto do host, sem o usuário precisar criar atalho non-Steam manualmente. Resolve o problema que antes exigiria separar `deck_app_id` de `host_app_id` no perfil - o Runner supre essa necessidade de outra forma.
+- **Atalhos por jogo + "Jogado recentemente" no Deck.** Trocar o atalho Steam compartilhado (`steamShortcut.ts`) por um atalho por jogo faria o Deck mostrar cada jogo streamado separadamente em "Jogado recentemente". Feature 100% client-side (Deck) - estudado o mecanismo real do MoonDeck (`AppOverviewPatcher`, `MoonDeckAppShortcuts`): mantêm um `BiMap` atalho↔jogo e fazem monkey-patch ao vivo do campo `rt_last_time_locally_played` no app store da Steam via `appStoreEx.observe()`/`intercept()`, com detecção de corrupção de cache e purga+reinício do client Steam como fallback. Genuinamente um dos subsistemas mais complexos do MoonDeck inteiro - vale a pena, mas não é trivial.
 - Lista de clients conectados / status de estabilidade de conexão na janela do Runner.
 - Checagem de prontidão do host antes de iniciar o stream (GPU/encoder, sessão Plasma ativa).
-- Pareamento com certificado/TLS (o que o MoonDeck Buddy faz - bem mais complexo, só se for necessário de verdade).
+- Pareamento com certificado/TLS, se algum dia fizer falta de verdade (o que o MoonDeck Buddy faz - bem mais complexo, decisão consciente de não fazer isso agora).
+
+Decisão explícita (registrada pra não repetir a discussão depois): **não forkar o MoonDeck nem o Buddy.** A arquitetura deles pressupõe os dois itens que este projeto existia pra evitar (daemon extra no host, ausência de perfis contextuais - ver Motivação) - só que a Fase 5 já abriu mão do primeiro item, deliberadamente. Ainda assim, forkar herdaria uma arquitetura C++/Qt desconhecida e perfis não-contextuais - mais trabalho, não menos. A estratégia continua sendo: ler o código deles como referência pontual (como já feito pro botão da tela do jogo, pro fix do `gameid`, e pra API de tray/menu do Tauri), implementar direto no stack já validado.
 
 ## Referências técnicas
 
