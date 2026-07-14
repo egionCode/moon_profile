@@ -138,6 +138,7 @@ def register_with_runner(config: dict, host_app_id: str) -> None:
         req.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(req, timeout=5):
             pass
+        print(f"Sessao registrada no Runner ({config['host']}:{config.get('runner_port', RUNNER_PORT)}) pro app_id={host_app_id}", file=sys.stderr)
     except (urllib.error.URLError, OSError) as e:
         print(f"Nao consegui registrar a sessao no Runner (seguindo sem ele): {e}", file=sys.stderr)
 

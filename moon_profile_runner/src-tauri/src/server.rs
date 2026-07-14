@@ -76,6 +76,7 @@ pub(crate) fn is_app_id_running(app_id: &str) -> bool {
 // "quando receber uma chamada de sincronia" - dispara o pulso ANTES de
 // montar a resposta, no exato momento em que o Deck de fato pediu a lista.
 async fn games(Extension(notify): Extension<EventNotifier>) -> Json<Vec<HostGame>> {
+    println!("[server] GET /games (sincronizacao pedida pelo Deck)");
     let _ = notify.send(RunnerEvent::GamesSynced);
     Json(list_host_games().await)
 }
@@ -94,6 +95,7 @@ pub async fn run_server(notify: EventNotifier, session_state: SessionState, apol
     let listener = tokio::net::TcpListener::bind("0.0.0.0:47991")
         .await
         .expect("failed to bind runner HTTP server to port 47991");
+    println!("[server] MoonProfile Runner escutando em 0.0.0.0:47991");
 
     axum::serve(listener, app(notify, session_state, apollo_base_url))
         .await

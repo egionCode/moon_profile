@@ -55,6 +55,7 @@ pub async fn register_session(
     Extension(state): Extension<SessionState>,
     Json(req): Json<RegisterSessionRequest>,
 ) -> Json<CloseResponse> {
+    println!("[session] registrada: app_id={}", req.app_id);
     let mut guard = state.lock().await;
     *guard = Some(ActiveSession {
         app_id: req.app_id,
@@ -75,19 +76,25 @@ pub async fn close_session_now(
     let session = { state.lock().await.clone().map(|s| (s.username, s.password)) };
 
     let Some((username, password)) = session else {
+        println!("[session] fechamento manual pedido, mas nao ha sessao registrada");
         return Json(CloseResponse {
             ok: false,
             error: Some("Nenhuma sessao registrada no Runner".to_string()),
         });
     };
 
+    println!("[session] fechamento manual pedido - chamando o Apollo");
     match apollo::close_session_at(&base_url, &username, &password).await {
         Ok(()) => {
+            println!("[session] Apollo fechou a sessao com sucesso (fechamento manual)");
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
             Json(CloseResponse { ok: true, error: None })
         }
-        Err(error) => Json(CloseResponse { ok: false, error: Some(error) }),
+        Err(error) => {
+            println!("[session] Apollo falhou ao fechar (fechamento manual): {error}");
+            Json(CloseResponse { ok: false, error: Some(error) })
+        }
     }
 }
 
@@ -110,17 +117,24 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
         return false;
     };
 
-    if is_app_id_running(&app_id) {
+    let running = is_app_id_running(&app_id);
+    println!("[session] watchdog: checando app_id={app_id}, rodando={running}");
+    if running {
         return false;
     }
 
+    println!("[session] watchdog: app_id={app_id} nao esta mais rodando, fechando no Apollo");
     match apollo::close_session_at(base_url, &username, &password).await {
         Ok(()) => {
+            println!("[session] watchdog: Apollo fechou a sessao com sucesso");
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
             true
         }
-        Err(_) => false,
+        Err(error) => {
+            println!("[session] watchdog: Apollo falhou ao fechar ({error}) - tenta de novo no proximo tick");
+            false
+        }
     }
 }
 
