@@ -111,6 +111,35 @@ def build_prep_cmd(host_cfg: dict, app_id) -> list:
     return steps
 
 
+def build_restore_commands(host_cfg: dict) -> list:
+    """
+    So' a parte de RESTAURAR TELA do undo de build_prep_cmd (fecha o Big
+    Picture, religa os outputs desativados, desliga o target) - SEM o
+    pkill/sleep-20/pkill de matar o jogo. Em ordem de EXECUCAO (nao e'
+    array do Apollo, e' uma lista simples pro Runner rodar direto via
+    shell, um comando por vez, na ordem que aparece).
+
+    Usado so' pelo fechamento AUTONOMO (watchdog do Runner - session.rs):
+    quando o watchdog chama isso, o processo do jogo JA foi confirmado
+    morto (is_app_id_running() == False) - o periodo de graca de 20s do
+    build_prep_cmd existe pra um jogo que TALVEZ ainda esteja vivo (ver
+    comentario la'), o que nao e' o caso aqui. Rodar esses 20s de espera
+    de qualquer jeito so' atrasa a resposta do usuario sem nenhum
+    beneficio (nada pra matar). O fechamento MANUAL ("Fechar conexao")
+    continua usando o array cheio de build_prep_cmd via Apollo, porque
+    nesse caso o jogo pode genuinamente ainda estar rodando.
+    """
+    target = host_cfg["target_output"]
+    disable_outputs = host_cfg.get("disable_outputs", [])
+
+    commands = ["setsid steam steam://close/bigpicture", "sleep 2"]
+    commands.extend(f"kscreen-doctor output.{o}.enable" for o in disable_outputs)
+    commands.append("sleep 1")
+    if disable_outputs:
+        commands.append(f"kscreen-doctor output.{target}.disable")
+    return commands
+
+
 class ApolloClient:
     """
     Cliente minimo (so stdlib, sem 'requests') pra API REST do Apollo.

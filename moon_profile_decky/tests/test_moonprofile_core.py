@@ -6,7 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "py_modules"))
 
-from moonprofile_core import build_prep_cmd, classify_apollo_error, detect_context
+from moonprofile_core import build_prep_cmd, build_restore_commands, classify_apollo_error, detect_context
 import json
 import urllib.error
 
@@ -99,6 +99,48 @@ class TestBuildPrepCmd:
         steps = build_prep_cmd(host_cfg, app_id=123)
 
         assert steps[0]["undo"] == "kscreen-doctor output.HDMI-A-1.disable"
+
+
+class TestBuildRestoreCommands:
+    def test_closes_big_picture_first_then_settles(self):
+        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": []}
+
+        commands = build_restore_commands(host_cfg)
+
+        assert commands[0] == "setsid steam steam://close/bigpicture"
+        assert commands[1] == "sleep 2"
+
+    def test_has_no_pkill_or_long_sleep_steps(self):
+        # diferenca chave vs build_prep_cmd: nada de matar processo nem
+        # sleep 20 - o jogo ja foi confirmado morto antes de chamar isso
+        # (watchdog do Runner), o periodo de graca nao serve pra nada aqui.
+        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": ["DP-2"]}
+
+        commands = build_restore_commands(host_cfg)
+
+        assert not any("pkill" in c for c in commands)
+        assert "sleep 20" not in commands
+
+    def test_does_not_disable_target_output_without_a_fallback_display(self):
+        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": []}
+
+        commands = build_restore_commands(host_cfg)
+
+        assert not any("HDMI-A-1.disable" in c for c in commands)
+
+    def test_re_enables_disabled_outputs_in_order_then_disables_the_target(self):
+        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": ["DP-2", "DP-3"]}
+
+        commands = build_restore_commands(host_cfg)
+
+        assert commands == [
+            "setsid steam steam://close/bigpicture",
+            "sleep 2",
+            "kscreen-doctor output.DP-2.enable",
+            "kscreen-doctor output.DP-3.enable",
+            "sleep 1",
+            "kscreen-doctor output.HDMI-A-1.disable",
+        ]
 
 
 class TestClassifyApolloError:
