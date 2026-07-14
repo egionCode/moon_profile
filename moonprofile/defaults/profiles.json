@@ -1,0 +1,42 @@
+[
+  {
+    "id": "docked-tv-4k-hdr",
+    "name": "Docked TV 4K HDR",
+    "trigger": "docked",
+    "moonlight": {
+      "resolution": "3840x2160",
+      "fps": 60,
+      "bitrate": 150000,
+      "codec": "HEVC",
+      "hdr": true
+    },
+    "host": {
+      "target_output": "HDMI-A-1",
+      "resolution": "3840x2160",
+      "fps": 60,
+      "hdr": true,
+      "wcg": true,
+      "disable_outputs": ["DP-3"]
+    }
+  },
+  {
+    "id": "handheld-native",
+    "name": "Handheld Nativo",
+    "trigger": "handheld",
+    "moonlight": {
+      "resolution": "1280x800",
+      "fps": 60,
+      "bitrate": 15000,
+      "codec": "H264",
+      "hdr": false
+    },
+    "host": {
+      "target_output": "HDMI-A-1",
+      "resolution": "1280x800",
+      "fps": 60,
+      "hdr": false,
+      "wcg": false,
+      "disable_outputs": ["DP-3"]
+    }
+  }
+]
