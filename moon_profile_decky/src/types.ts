@@ -58,3 +58,31 @@ export interface SessionStatus {
   ok: boolean;
   running: boolean;
 }
+
+// Um jogo listado pelo MoonProfile Runner (ver moon_profile_runner/src-tauri/
+// src/games.rs) - Estagio A: so' jogos Steam reais (is_steam sempre true por
+// enquanto, non-Steam fica pro Estagio B).
+export interface HostGame {
+  name: string;
+  host_app_id: string;
+  is_steam: boolean;
+}
+
+export interface ListGamesResult {
+  ok: boolean;
+  games: HostGame[];
+  runner_path?: string;
+  error?: string;
+}
+
+// Um atalho por jogo ja criado no Deck - persistido em
+// game_shortcuts.json (ver main.py), chave e' o host_app_id. Alimenta a
+// aba "Jogos" (grid) alem de servir pra gameShortcuts.ts nao recriar
+// atalho que ja existe.
+export interface GameShortcutEntry {
+  deck_app_id: number;
+  name: string;
+  is_steam: boolean;
+}
+
+export type GameShortcuts = Record<string, GameShortcutEntry>;
