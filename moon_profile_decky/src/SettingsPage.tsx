@@ -12,6 +12,7 @@ import { ProfileList } from "./ProfileList";
 import { ProfileEditor } from "./ProfileEditor";
 import { ApolloConfigSection } from "./ApolloConfigSection";
 import { ButtonPositionSection } from "./ButtonPositionSection";
+import { RunnerConfigSection } from "./RunnerConfigSection";
 import { LogsSection } from "./LogsSection";
 import { getProfiles, saveProfiles, getConfig, saveConfig } from "./api";
 import { Config, Profile } from "./types";
@@ -166,6 +167,11 @@ export function SettingsPage() {
           onDelete={onDelete}
         />
       ),
+    },
+    {
+      title: "Runner",
+      identifier: "runner",
+      content: <RunnerConfigSection config={config} setConfig={setConfig} onSave={onSaveConfig} />,
     },
     {
       title: "Logs",

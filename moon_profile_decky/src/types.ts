@@ -38,6 +38,11 @@ export interface Config {
   username: string; // credencial admin do Apollo
   password: string; // credencial admin do Apollo
   button_position: ButtonPosition;
+  // MoonProfile Runner (daemon Tauri/Rust no host, Fase 5) - suplementa a
+  // deteccao de fim de sessao que o Apollo nao consegue fazer sozinho.
+  // Sem autenticacao (servidor aberto na LAN, decisao explicita).
+  runner_host: string;
+  runner_port: number;
 }
 
 export interface StreamResult {
@@ -47,4 +52,9 @@ export interface StreamResult {
   error?: string;
   runner_path?: string;
   launch_env?: Record<string, string>;
+}
+
+export interface SessionStatus {
+  ok: boolean;
+  running: boolean;
 }

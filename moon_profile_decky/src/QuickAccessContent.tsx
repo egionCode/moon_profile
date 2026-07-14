@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { getProfiles, detectContext, stopStream } from "./api";
+import { stopSessionWatch } from "./stream";
 import { Profile } from "./types";
 
 export function QuickAccessContent() {
@@ -17,6 +18,7 @@ export function QuickAccessContent() {
   const onClose = async () => {
     setClosing(true);
     try {
+      stopSessionWatch();
       const result = await stopStream();
       if (result.ok) {
         toaster.toast({ title: "MoonProfile", body: "Conexao fechada" });
