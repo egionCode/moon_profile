@@ -11,6 +11,7 @@ import decky
 
 APP_NAME = "SteamGame"
 APOLLO_PORT = 47990
+RUNNER_PORT = 47991
 
 # Mesma posicao que ja estava hardcoded no GameActionButton.tsx (canto
 # inferior esquerdo, com um respiro da borda) - agora e' so o default
@@ -170,6 +171,28 @@ class ApolloClient:
         return self._request("POST", "/api/apps/close", {})
 
 
+class RunnerClient:
+    """
+    Cliente minimo pro MoonProfile Runner (daemon Tauri/Rust rodando no
+    host, ver moon_profile_runner/) - so' checa se o processo do jogo ainda
+    esta rodando, suprindo a deteccao de fim de sessao que o Apollo nao
+    consegue fazer sozinho (Fase 5 do PRD: auto-detach do stream_game entra
+    em modo "placebo" no Apollo depois de 5s, current_app nunca mais
+    reflete a realidade). Sem autenticacao - servidor aberto na rede local
+    (decisao explicita: numa LAN domestica ja confiavel, o atrito de colar
+    um token na config nao compensa o ganho de seguranca).
+    """
+
+    def __init__(self, host: str, port: int):
+        self.base_url = f"http://{host}:{port}"
+
+    def session_running(self, app_id) -> bool:
+        req = urllib.request.Request(f"{self.base_url}/session/status?app_id={app_id}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            return bool(data.get("running", True))
+
+
 def _apollo_error_response(host: str, error: Exception) -> dict:
     """
     Traduz uma excecao de rede/HTTP falando com o Apollo numa mensagem clara
@@ -200,11 +223,20 @@ class Plugin:
     async def get_config(self) -> dict:
         path = _config_path()
         if not os.path.exists(path):
-            return {"host": "", "username": "", "password": "", "button_position": dict(DEFAULT_BUTTON_POSITION)}
+            return {
+                "host": "",
+                "username": "",
+                "password": "",
+                "button_position": dict(DEFAULT_BUTTON_POSITION),
+                "runner_host": "",
+                "runner_port": RUNNER_PORT,
+            }
         with open(path) as f:
             config = json.load(f)
-        # setdefault: configs salvos antes dessa feature nao tem esse campo.
+        # setdefault: configs salvos antes dessas features nao tem esses campos.
         config.setdefault("button_position", dict(DEFAULT_BUTTON_POSITION))
+        config.setdefault("runner_host", "")
+        config.setdefault("runner_port", RUNNER_PORT)
         return config
 
     async def save_config(self, config: dict) -> None:
@@ -318,6 +350,27 @@ class Plugin:
             decky.logger.error(f"Falha ao fechar sessao no Apollo: {e}")
             return _apollo_error_response(config["host"], e)
         return {"ok": True}
+
+    async def check_session_status(self, app_id: int) -> dict:
+        # Chamado pelo frontend em polling enquanto uma sessao esta ativa
+        # (ver stream.ts), pra detectar quando o jogo fecha por dentro sem
+        # passar por "Fechar conexao". Se o runner nao estiver configurado
+        # ou ficar inalcancavel, assume "ainda rodando" (running=True) -
+        # nao queremos fechar a sessao por engano so' porque o daemon caiu
+        # ou nunca foi instalado (fallback seguro, equivalente a nao ter
+        # essa feature ainda).
+        config = await self.get_config()
+        runner_host = config.get("runner_host")
+        if not runner_host:
+            return {"ok": False, "running": True}
+
+        try:
+            client = RunnerClient(runner_host, config.get("runner_port", RUNNER_PORT))
+            running = client.session_running(app_id)
+            return {"ok": True, "running": running}
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            decky.logger.error(f"Falha ao falar com o MoonProfile Runner: {e}")
+            return {"ok": False, "running": True}
 
     async def _main(self):
         decky.logger.info("MoonProfile carregado")
