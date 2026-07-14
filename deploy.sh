@@ -46,6 +46,7 @@ rsync -az --no-owner --no-group --delete \
     --exclude node_modules \
     --exclude .git \
     --exclude plugin.json \
+    --exclude docs \
     "${SCRIPT_DIR}/" "${DECK_USER}@${DECK_HOST}:${PLUGIN_DIR}/"
 
 log "reiniciando plugin_loader..."
