@@ -1,0 +1,120 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const getStreamingCollectionId = vi.fn();
+const saveStreamingCollectionId = vi.fn();
+
+vi.mock("../src/api", () => ({
+  getStreamingCollectionId: (...args: unknown[]) => getStreamingCollectionId(...args),
+  saveStreamingCollectionId: (...args: unknown[]) => saveStreamingCollectionId(...args),
+}));
+
+// import dinamico depois do vi.mock (hoisted) - mesmo padrao recomendado
+// pelo vitest pra mockar um modulo importado pelo modulo sob teste.
+const { addShortcutsToStreamingCollection } = await import("../src/gameCollection");
+
+function overviewOf(appId: number): unknown {
+  return { appid: appId };
+}
+
+describe("addShortcutsToStreamingCollection", () => {
+  let addApps: ReturnType<typeof vi.fn>;
+  let save: ReturnType<typeof vi.fn>;
+  let collection: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getStreamingCollectionId.mockResolvedValue(null);
+    saveStreamingCollectionId.mockResolvedValue(undefined);
+
+    addApps = vi.fn();
+    save = vi.fn().mockResolvedValue(undefined);
+    collection = {
+      apps: { has: vi.fn().mockReturnValue(false) },
+      AsDragDropCollection: () => ({ AddApps: addApps }),
+      Save: save,
+    };
+    (window as any).collectionStore = {
+      GetCollectionIDByUserTag: vi.fn().mockReturnValue(null),
+      GetCollection: vi.fn().mockReturnValue(undefined),
+      NewUnsavedCollection: vi.fn().mockReturnValue(collection),
+    };
+    (window as any).appStore = {
+      GetAppOverviewByAppID: vi.fn((id: number) => overviewOf(id)),
+    };
+  });
+
+  it("creates the collection with the initial apps when none exists yet", async () => {
+    (window as any).collectionStore.GetCollectionIDByUserTag
+      .mockReturnValueOnce(null) // resolveStreamingCollection: nao existe ainda
+      .mockReturnValue("collection-id-1"); // apos o Save(), pra descobrir o id de verdade
+
+    const ok = await addShortcutsToStreamingCollection([111, 222]);
+
+    expect(ok).toBe(true);
+    expect((window as any).collectionStore.NewUnsavedCollection).toHaveBeenCalledWith(
+      "Streaming",
+      undefined,
+      [overviewOf(111), overviewOf(222)],
+    );
+    expect(save).toHaveBeenCalled();
+    expect(saveStreamingCollectionId).toHaveBeenCalledWith("collection-id-1");
+  });
+
+  it("reuses the persisted collection id instead of creating a duplicate", async () => {
+    getStreamingCollectionId.mockResolvedValue("collection-id-1");
+    (window as any).collectionStore.GetCollection.mockReturnValue(collection);
+
+    const ok = await addShortcutsToStreamingCollection([111]);
+
+    expect(ok).toBe(true);
+    expect((window as any).collectionStore.GetCollection).toHaveBeenCalledWith("collection-id-1");
+    expect((window as any).collectionStore.NewUnsavedCollection).not.toHaveBeenCalled();
+    expect(saveStreamingCollectionId).not.toHaveBeenCalled(); // id nao mudou, nao precisa regravar
+  });
+
+  it("falls back to tag lookup when the persisted id points at a deleted collection", async () => {
+    getStreamingCollectionId.mockResolvedValue("stale-id");
+    (window as any).collectionStore.GetCollection.mockImplementation((id: string) =>
+      id === "stale-id" ? undefined : collection,
+    );
+    (window as any).collectionStore.GetCollectionIDByUserTag.mockReturnValue("collection-id-2");
+
+    const ok = await addShortcutsToStreamingCollection([111]);
+
+    expect(ok).toBe(true);
+    expect((window as any).collectionStore.NewUnsavedCollection).not.toHaveBeenCalled();
+    expect(saveStreamingCollectionId).toHaveBeenCalledWith("collection-id-2"); // id mudou, regrava
+  });
+
+  it("skips apps already in the collection and does not call Save again", async () => {
+    getStreamingCollectionId.mockResolvedValue("collection-id-1");
+    (window as any).collectionStore.GetCollection.mockReturnValue(collection);
+    collection.apps.has.mockReturnValue(true); // ja' esta' tudo la'
+
+    const ok = await addShortcutsToStreamingCollection([111, 222]);
+
+    expect(ok).toBe(true);
+    expect(addApps).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("only adds the apps that are missing (dedup)", async () => {
+    getStreamingCollectionId.mockResolvedValue("collection-id-1");
+    (window as any).collectionStore.GetCollection.mockReturnValue(collection);
+    collection.apps.has.mockImplementation((id: number) => id === 111); // 111 ja' esta', 222 nao
+
+    const ok = await addShortcutsToStreamingCollection([111, 222]);
+
+    expect(ok).toBe(true);
+    expect(addApps).toHaveBeenCalledWith([overviewOf(222)]);
+  });
+
+  it("returns false without throwing when the collection cannot be created", async () => {
+    (window as any).collectionStore.NewUnsavedCollection.mockReturnValue(undefined);
+
+    const ok = await addShortcutsToStreamingCollection([111]);
+
+    expect(ok).toBe(false);
+    expect(saveStreamingCollectionId).not.toHaveBeenCalled();
+  });
+});

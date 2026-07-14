@@ -47,7 +47,13 @@ export async function syncHostGames(): Promise<void> {
   await saveGameShortcuts(shortcuts);
   // uma chamada so' com todos os appids - o dedup contra quem ja' esta' na
   // colecao acontece dentro de addShortcutsToStreamingCollection.
-  await addShortcutsToStreamingCollection(deckAppIds);
+  const collectionOk = await addShortcutsToStreamingCollection(deckAppIds);
+  if (!collectionOk) {
+    toaster.toast({
+      title: "MoonProfile - aviso",
+      body: 'Jogos sincronizados, mas falhou ao organizar na colecao "Streaming" (ver logs)',
+    });
+  }
 
   toaster.toast({
     title: "MoonProfile",

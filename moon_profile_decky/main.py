@@ -33,6 +33,10 @@ def _game_shortcuts_path() -> str:
     return os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "game_shortcuts.json")
 
 
+def _streaming_collection_path() -> str:
+    return os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "streaming_collection.json")
+
+
 class RunnerClient:
     """
     Cliente minimo pro MoonProfile Runner (daemon Tauri/Rust rodando no
@@ -123,6 +127,21 @@ class Plugin:
     async def save_game_shortcuts(self, shortcuts: dict) -> None:
         with open(_game_shortcuts_path(), "w") as f:
             json.dump(shortcuts, f, indent=2)
+
+    async def get_streaming_collection_id(self):
+        # Id persistido da colecao "Streaming" (ver gameCollection.ts) -
+        # nao depende so' da busca por tag a cada sincronizacao: o tag e'
+        # derivado do nome exibido, quebra se o usuario renomear a colecao
+        # manualmente na Steam; o id sobrevive a isso.
+        path = _streaming_collection_path()
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return json.load(f).get("collection_id")
+
+    async def save_streaming_collection_id(self, collection_id: str) -> None:
+        with open(_streaming_collection_path(), "w") as f:
+            json.dump({"collection_id": collection_id}, f)
 
     async def get_logs(self, lines: int) -> str:
         # decky.DECKY_PLUGIN_LOG e' o arquivo da sessao ATUAL (nome com

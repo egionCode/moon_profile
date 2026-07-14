@@ -20,3 +20,6 @@ export const listHostGames = callable<[], ListGamesResult>("list_host_games");
 
 export const getGameShortcuts = callable<[], GameShortcuts>("get_game_shortcuts");
 export const saveGameShortcuts = callable<[shortcuts: GameShortcuts], void>("save_game_shortcuts");
+
+export const getStreamingCollectionId = callable<[], string | null>("get_streaming_collection_id");
+export const saveStreamingCollectionId = callable<[collection_id: string], void>("save_streaming_collection_id");

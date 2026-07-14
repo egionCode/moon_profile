@@ -6,6 +6,8 @@
 // src/steam-utils/), que resolve o mesmo problema (colecao non-Steam com
 // dedup) pro streaming via Moonlight.
 
+import { getStreamingCollectionId, saveStreamingCollectionId } from "./api";
+
 const COLLECTION_TAG = "Streaming";
 
 interface SteamCollection {
@@ -30,47 +32,88 @@ declare global {
   }
 }
 
-// Busca por tag (nome) em vez de criar sempre - evita duplicar a colecao
-// a cada sincronizacao (GetCollectionIDByUserTag/NewUnsavedCollection e'
-// o mesmo padrao que o MoonDeck usa pra colecao propria dele).
-async function getOrCreateStreamingCollection(): Promise<SteamCollection | null> {
-  const existingId = window.collectionStore.GetCollectionIDByUserTag(COLLECTION_TAG);
-  if (existingId !== null) {
-    const existing = window.collectionStore.GetCollection(existingId);
-    if (existing !== undefined) {
-      return existing;
+interface ResolvedCollection {
+  collection: SteamCollection;
+  id: string;
+}
+
+// O id persistido (config, ver api.ts) e' a fonte de verdade primeiro -
+// sobrevive a renomeacao manual da colecao (o "tag" usado por
+// GetCollectionIDByUserTag e' derivado do nome exibido, quebra se o
+// usuario renomear na Steam). Busca por tag e' so' o fallback pra achar
+// uma colecao ja existente da primeira vez (antes de termos um id
+// persistido) ou se o id salvo ficou orfao (colecao apagada por fora).
+// So' cria uma nova de verdade se nenhuma das duas achar nada.
+async function resolveStreamingCollection(
+  persistedId: string | null,
+  initialOverviews: unknown[],
+): Promise<ResolvedCollection | null> {
+  if (persistedId !== null) {
+    const byId = window.collectionStore.GetCollection(persistedId);
+    if (byId !== undefined) {
+      return { collection: byId, id: persistedId };
     }
   }
 
-  const created = window.collectionStore.NewUnsavedCollection(COLLECTION_TAG, undefined, []);
+  const idByTag = window.collectionStore.GetCollectionIDByUserTag(COLLECTION_TAG);
+  if (idByTag !== null) {
+    const byTag = window.collectionStore.GetCollection(idByTag);
+    if (byTag !== undefined) {
+      return { collection: byTag, id: idByTag };
+    }
+  }
+
+  // Cria ja' com os apps iniciais (3o argumento de NewUnsavedCollection),
+  // em vez de criar vazia e so' depois chamar AddApps - um unico Save().
+  const created = window.collectionStore.NewUnsavedCollection(COLLECTION_TAG, undefined, initialOverviews);
   if (created === undefined) {
     return null;
   }
-  await created.Save(); // sem Save() a colecao nao persiste (so' fica em memoria)
-  return created;
+  await created.Save();
+
+  // NewUnsavedCollection nao devolve o id (so' o objeto da colecao) - o
+  // unico jeito de descobrir o id de verdade e' perguntar de novo pelo
+  // tag, agora que ja foi salva.
+  const newId = window.collectionStore.GetCollectionIDByUserTag(COLLECTION_TAG);
+  if (newId === null) {
+    return null;
+  }
+  return { collection: created, id: newId };
 }
 
 // Adiciona os atalhos sincronizados (deck_app_id) na colecao "Streaming",
-// criando-a se ainda nao existir. Dedup manual via collection.apps.has -
-// AddApps nao deduplica sozinho (confirmado no codigo do MoonDeck) - so'
-// persiste (Save) se realmente faltava alguem, overwrite/reuso correto
-// entre sincronizacoes sem duplicar entradas.
-export async function addShortcutsToStreamingCollection(deckAppIds: number[]): Promise<void> {
-  const collection = await getOrCreateStreamingCollection();
-  if (collection === null) {
-    console.error('MoonProfile: falha ao criar/obter a colecao "Streaming"');
-    return;
-  }
-
-  const missingOverviews = deckAppIds
-    .filter((appId) => !collection.apps.has(appId))
+// criando-a se ainda nao existir, e persiste o id resolvido pra
+// sincronizacoes futuras nao dependerem so' da busca por tag. Dedup
+// manual via collection.apps.has - AddApps nao deduplica sozinho
+// (confirmado no codigo do MoonDeck) - so' persiste (Save) se realmente
+// faltava alguem. Retorna false (sem lancar excecao) se algo deu errado,
+// pro chamador poder avisar o usuario em vez de falhar silencioso.
+export async function addShortcutsToStreamingCollection(deckAppIds: number[]): Promise<boolean> {
+  const overviews = deckAppIds
     .map((appId) => window.appStore.GetAppOverviewByAppID(appId))
     .filter((overview): overview is NonNullable<typeof overview> => overview !== null);
 
-  if (missingOverviews.length === 0) {
-    return;
+  const persistedId = await getStreamingCollectionId();
+  const resolved = await resolveStreamingCollection(persistedId, overviews);
+  if (resolved === null) {
+    console.error('MoonProfile: falha ao criar/obter a colecao "Streaming"');
+    return false;
   }
 
-  collection.AsDragDropCollection().AddApps(missingOverviews);
-  await collection.Save();
+  if (resolved.id !== persistedId) {
+    await saveStreamingCollectionId(resolved.id);
+  }
+
+  const missingAppIds = deckAppIds.filter((appId) => !resolved.collection.apps.has(appId));
+  if (missingAppIds.length === 0) {
+    return true;
+  }
+
+  const missingOverviews = missingAppIds
+    .map((appId) => window.appStore.GetAppOverviewByAppID(appId))
+    .filter((overview): overview is NonNullable<typeof overview> => overview !== null);
+
+  resolved.collection.AsDragDropCollection().AddApps(missingOverviews);
+  await resolved.collection.Save();
+  return true;
 }
