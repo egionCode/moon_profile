@@ -223,14 +223,67 @@ Nosso `stream_game()` usa `"auto-detach": true` justamente porque `cmd: "steam s
 - Testes automatizados (`cargo test`, ver `server.rs`) - já pegaram dois bugs reais rodando contra o SO de verdade: `refresh_processes()` sem `cmd()` populado, e match por substring colidindo com prefixo numérico compartilhado entre AppIds diferentes.
 - `main.py`: `RunnerClient` (stdlib, mesmo espírito do `ApolloClient`) + `check_session_status(app_id)`, com fallback seguro (`running: true`) se o runner não estiver configurado ou ficar inalcançável - nunca fecha uma sessão por engano só porque o daemon caiu.
 - Frontend (`stream.ts`): polling a cada 5s enquanto uma sessão está ativa (`watchSession`), cancelado tanto quando detecta fim de sessão quanto quando o usuário clica "Fechar conexão" manualmente (`stopSessionWatch`, chamado também em `QuickAccessContent.tsx`).
-- Nova aba "Runner" na sidenav de Configurações (`RunnerConfigSection.tsx`) pra colar host/porta.
+- Nova aba "Runner" na sidenav de Configurações (`RunnerConfigSection.tsx`) - só a porta é configurável, o host é o mesmo da aba "Config do Apollo" (Runner e Apollo sempre rodam na mesma máquina).
 - Autostart via `~/.config/autostart/*.desktop` (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`) - não systemd, o app precisa de sessão gráfica ativa pra mostrar o tray.
 
 **Ainda não validado com o Apollo/Deck reais** - só testado com processo fake isolado via `cargo test`. Falta: instalar de verdade (`./install.sh`), configurar host/porta no Deck, dar stream, fechar o jogo por dentro sem clicar "Fechar conexão" e confirmar que a sessão encerra sozinha.
 
-**Próximos passos (UI já com espaço reservado, objetivos que antes estavam na "Fase 4.5"):**
-- **Enumeração de jogos non-Steam do host.** O Runner listaria os jogos (Steam e non-Steam) direto do host, sem o usuário precisar criar atalho non-Steam manualmente. Resolve o problema que antes exigiria separar `deck_app_id` de `host_app_id` no perfil - o Runner supre essa necessidade de outra forma.
-- **Atalhos por jogo + "Jogado recentemente" no Deck.** Trocar o atalho Steam compartilhado (`steamShortcut.ts`) por um atalho por jogo faria o Deck mostrar cada jogo streamado separadamente em "Jogado recentemente". Feature 100% client-side (Deck) - estudado o mecanismo real do MoonDeck (`AppOverviewPatcher`, `MoonDeckAppShortcuts`): mantêm um `BiMap` atalho↔jogo e fazem monkey-patch ao vivo do campo `rt_last_time_locally_played` no app store da Steam via `appStoreEx.observe()`/`intercept()`, com detecção de corrupção de cache e purga+reinício do client Steam como fallback. Genuinamente um dos subsistemas mais complexos do MoonDeck inteiro - vale a pena, mas não é trivial.
+### Atalhos por jogo gerados a partir do Runner (substitui o botão da tela do jogo)
+
+Ideia: em vez de um botão injetado via patch React (frágil, só funciona pra
+jogos que já são catálogo Steam real), o Runner lê os jogos do host e o
+Deck cria um atalho visível por jogo (com capa/hero) - o usuário clica
+"Jogar" nativo, sem precisar do botão. Resolve non-Steam e "Jogado
+recentemente" de uma vez, e permite deletar o patch mais frágil do projeto
+(só depois de validar no device - ver Estágio C).
+
+**Achado importante do planejamento:** o atalho, ao virar item normal da
+biblioteca, pode ser clicado sem nenhum JS nosso rodando antes - por isso
+`runner.py` deixou de ser um lançador burro e passou a se auto-configurar
+(ler config/perfis do disco, detectar contexto, falar com o Apollo) antes
+de dar exec no Moonlight. Isso também simplificou `main.py:stream_game()`
+(não fala mais com o Apollo, só valida antes de tentar) e faz o botão
+antigo (ainda existente) usar exatamente o mesmo mecanismo novo.
+
+**Estágio A - ✅ implementado (jogos Steam reais):**
+- `py_modules/moonprofile_core.py` (novo): `ApolloClient`, `detect_context`,
+  `build_prep_cmd`, `classify_apollo_error` - extraído de `main.py` pra ser
+  importável também por `runner.py` (que roda fora do Decky Loader, sem
+  `py_modules` no `sys.path` automaticamente - `runner.py` insere isso na
+  mão, calculando o caminho a partir do próprio `__file__`).
+- `runner.py`: reescrito pra se auto-configurar (ver achado acima). Testado
+  com Apollo mockado (`configure_apollo()` roda ponta a ponta sem crashar).
+- `moon_profile_runner/src-tauri/src/games.rs` (novo): parsing de
+  `libraryfolders.vdf` + `appmanifest_*.acf` (crate `keyvalues-serde`),
+  endpoint `GET /games`. Filtra ferramentas da Valve por nome (Proton,
+  Steamworks Common Redistributables, Steam Linux Runtime) - achado real
+  rodando contra a instalação Steam de verdade desta máquina (28 entradas
+  viraram 19 depois do filtro). 11 testes automatizados no total do Runner.
+- `gameShortcuts.ts` (novo): versão por-jogo de `ensureLauncherShortcut` -
+  atalho **visível** (sem esconder), launch options fixas
+  (`MOONPROFILE_HOST_APP_ID=<id>`) setadas uma vez na criação, não mais a
+  cada lançamento.
+- `gameArtwork.ts` (novo): `SteamClient.Apps.SetCustomArtworkForApp` (API
+  confirmada lendo o código-fonte do `SteamGridDB/decky-steamgriddb`) com
+  capa/hero da CDN oficial da Steam (só funciona pra AppIDs Steam reais).
+- `gameSync.ts` (novo) + botão "Sincronizar jogos do host" no Quick Access -
+  sincronização manual por enquanto.
+
+**Ainda não validado no device** - tudo testado localmente (Apollo/processo
+mockados, fixtures de VDF), mas não com o Deck/Steam de verdade criando os
+atalhos e clicando "Jogar" neles.
+
+**Estágio B (a fazer): jogos non-Steam.** Parsing do `shortcuts.vdf`
+(binário) do host, novo campo `steamgriddb_api_key` na config, artwork via
+SteamGridDB (`search_game` pelo nome) em vez da CDN oficial.
+
+**Estágio C (a fazer, só depois de validar A+B no device): remover o botão
+antigo.** Deletar `LibraryAppPatch.tsx`, `GameActionButton.tsx`, tirar o
+registro de `patchLibraryApp()` de `index.tsx`. `ensureLauncherShortcut`/
+`hideShortcut` (o atalho único e escondido, `steamShortcut.ts`) também
+saem.
+
+**Fora de escopo (não decidido se vale a pena ainda):**
 - Lista de clients conectados / status de estabilidade de conexão na janela do Runner.
 - Checagem de prontidão do host antes de iniciar o stream (GPU/encoder, sessão Plasma ativa).
 - Pareamento com certificado/TLS, se algum dia fizer falta de verdade (o que o MoonDeck Buddy faz - bem mais complexo, decisão consciente de não fazer isso agora).
