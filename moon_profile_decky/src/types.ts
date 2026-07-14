@@ -40,8 +40,8 @@ export interface Config {
   button_position: ButtonPosition;
   // MoonProfile Runner (daemon Tauri/Rust no host, Fase 5) - suplementa a
   // deteccao de fim de sessao que o Apollo nao consegue fazer sozinho.
-  // Sem autenticacao (servidor aberto na LAN, decisao explicita).
-  runner_host: string;
+  // Sem autenticacao (servidor aberto na LAN, decisao explicita). Roda na
+  // MESMA maquina que o Apollo - so' a porta muda, o host e' "host" acima.
   runner_port: number;
 }
 
