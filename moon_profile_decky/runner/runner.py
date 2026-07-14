@@ -46,6 +46,7 @@ from moonprofile_core import (  # noqa: E402 (import depois do sys.path.insert e
     ApolloClient,
     CODEC_FLAGS,
     build_prep_cmd,
+    build_restore_commands,
     classify_apollo_error,
     detect_context,
 )
@@ -110,10 +111,38 @@ def configure_apollo(host_app_id: str) -> dict:
         "output": f"/tmp/apollo-steamgame-{host_app_id}.log",
     })
 
-    return {"config": config, "profile": profile}
+    return {"config": config, "profile": profile, "uuid": uuid}
 
 
-def register_with_runner(config: dict, host_app_id: str) -> None:
+def _quick_close_payload(uuid: str, host_app_id: str) -> dict:
+    """
+    Mesmo "SteamGame" de sempre, mas com prep-cmd VAZIO - o Apollo pula o
+    array de undo inteiro quando os campos undo_cmd estao vazios
+    (confirmado lendo process.cpp: "if (cmd.undo_cmd.empty()) continue").
+    Usado so' pelo fechamento AUTONOMO do watchdog (session.rs), que roda
+    build_restore_commands() ele mesmo, direto no host, ANTES de mandar o
+    Apollo fechar - reconfigurar pra undo vazio evita que o Apollo rode de
+    novo (e mais devagar, com os pkill/sleep-20 do build_prep_cmd
+    original) um trabalho que ja foi feito. So' faz sentido chamar isso
+    quando o jogo ja foi confirmado morto (is_app_id_running == False) -
+    nao remove a protecao do fechamento MANUAL, que continua usando o
+    array cheio via Apollo (ver main.py:stop_stream).
+    """
+    return {
+        "name": APP_NAME,
+        "cmd": f"steam steam://rungameid/{host_app_id}",
+        "uuid": uuid,
+        "auto-detach": True,
+        "wait-all": False,
+        "exit-timeout": 5,
+        "exclude-global-prep-cmd": False,
+        "elevated": False,
+        "prep-cmd": [],
+        "output": f"/tmp/apollo-steamgame-{host_app_id}.log",
+    }
+
+
+def register_with_runner(config: dict, host_app_id: str, profile: dict, uuid: str) -> None:
     """
     Avisa o MoonProfile Runner (daemon no host) que esta sessao comecou -
     credenciais em memoria, nunca gravadas em disco no host (ver
@@ -129,6 +158,8 @@ def register_with_runner(config: dict, host_app_id: str) -> None:
             "app_id": host_app_id,
             "username": config["username"],
             "password": config["password"],
+            "restore_commands": build_restore_commands(profile["host"]),
+            "quick_close_payload": _quick_close_payload(uuid, host_app_id),
         }).encode()
         req = urllib.request.Request(
             f"http://{config['host']}:{config.get('runner_port', RUNNER_PORT)}/session/register",
@@ -178,7 +209,7 @@ def main() -> None:
         sys.exit(1)
 
     config = result["config"]
-    register_with_runner(config, host_app_id)
+    register_with_runner(config, host_app_id, result["profile"], result["uuid"])
     moonlight_cfg = result["profile"]["moonlight"]
     codec_flag = CODEC_FLAGS.get(moonlight_cfg["codec"], "auto")
     hdr_flag = "--hdr" if moonlight_cfg.get("hdr") else "--no-hdr"

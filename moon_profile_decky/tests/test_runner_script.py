@@ -19,8 +19,11 @@ runner_script = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(runner_script)
 
 
+_PROFILE = {"host": {"target_output": "HDMI-A-1", "disable_outputs": []}}
+
+
 class TestRegisterWithRunner:
-    def test_posts_app_id_and_credentials_to_session_register(self):
+    def test_posts_app_id_credentials_and_restore_info_to_session_register(self):
         received = {}
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -40,17 +43,23 @@ class TestRegisterWithRunner:
         thread.start()
         try:
             config = {"host": "127.0.0.1", "username": "u", "password": "p", "runner_port": port}
-            runner_script.register_with_runner(config, "2050650")
+            runner_script.register_with_runner(config, "2050650", _PROFILE, "uuid-123")
         finally:
             thread.join(timeout=5)
             server.server_close()
 
         assert received["path"] == "/session/register"
-        assert received["body"] == {"app_id": "2050650", "username": "u", "password": "p"}
+        body = received["body"]
+        assert body["app_id"] == "2050650"
+        assert body["username"] == "u"
+        assert body["password"] == "p"
+        assert body["restore_commands"][0] == "setsid steam steam://close/bigpicture"
+        assert body["quick_close_payload"]["uuid"] == "uuid-123"
+        assert body["quick_close_payload"]["prep-cmd"] == []  # undo vazio, ver _quick_close_payload
 
     def test_does_not_raise_when_the_runner_is_unreachable(self):
         # Best-effort de proposito - o Runner e' opcional, uma falha aqui
         # NAO pode impedir o jogo de rodar (ver comentario na funcao).
         config = {"host": "127.0.0.1", "username": "u", "password": "p", "runner_port": 1}
 
-        runner_script.register_with_runner(config, "2050650")  # nao deve levantar excecao
+        runner_script.register_with_runner(config, "2050650", _PROFILE, "uuid-123")  # nao deve levantar excecao
