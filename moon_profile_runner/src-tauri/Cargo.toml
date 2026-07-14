@@ -36,8 +36,9 @@ sysinfo = "0.32"
 keyvalues-serde = "0.2"
 # appmanifest_*.acf nao tem campo de categoria (jogo vs software/ferramenta)
 # - so' a API publica da propria Steam (appdetails) diz o "type" de
-# verdade. Unico motivo do Runner precisar falar com a internet.
-reqwest = { version = "0.12", features = ["json"] }
+# verdade. Tambem usado (feature "cookies") pro fechamento autonomo de
+# sessao falar com o Apollo (cookie de sessao "auth", ver src/apollo.rs).
+reqwest = { version = "0.12", features = ["json", "cookies"] }
 
 [dev-dependencies]
 # So' pro ServiceExt::oneshot nos testes (bate direto no Router, sem
