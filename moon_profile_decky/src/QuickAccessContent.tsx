@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { PanelSection, PanelSectionRow, ButtonItem, Field, ProgressBarWithInfo } from "@decky/ui";
+import { PanelSection, PanelSectionRow, ButtonItem, Field, ProgressBarItem } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { getProfiles, detectContext, stopStream } from "./api";
 import { syncHostGames } from "./gameSync";
@@ -71,13 +71,19 @@ export function QuickAccessContent() {
           </ButtonItem>
         </PanelSectionRow>
         {syncProgress && (
-          <PanelSectionRow>
-            <ProgressBarWithInfo
-              layout="below"
-              nProgress={(syncProgress.current / syncProgress.total) * 100}
-              sOperationText={`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}
-            />
-          </PanelSectionRow>
+          <>
+            <PanelSectionRow>
+              <Field label="Sincronizando">{`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}</Field>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              {/* So' a barra, sem sOperationText/sTimeRemaining -
+                  ProgressBarWithInfo estourava esse texto pra fora do
+                  painel estreito do Quick Access (confirmado por
+                  screenshot: cortado no canto direito). O texto acima
+                  (Field) ja cobre a mesma informacao, sem esse problema. */}
+              <ProgressBarItem nProgress={(syncProgress.current / syncProgress.total) * 100} />
+            </PanelSectionRow>
+          </>
         )}
       </PanelSection>
 
