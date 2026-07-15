@@ -73,6 +73,7 @@ export function QuickAccessContent() {
         {syncProgress && (
           <PanelSectionRow>
             <ProgressBarWithInfo
+              layout="below"
               nProgress={(syncProgress.current / syncProgress.total) * 100}
               sOperationText={`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}
             />
