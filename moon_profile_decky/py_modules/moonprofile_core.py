@@ -52,82 +52,47 @@ def detect_context(drm_path: str = "/sys/class/drm") -> str:
     return "handheld"
 
 
-def build_prep_cmd(host_cfg: dict, app_id) -> list:
+def build_display_commands(host_cfg: dict) -> list:
     """
-    Monta o array "prep-cmd" em passos simples (sem "bash -c '...'", sem
-    aspas). O Apollo spawna comandos via Boost.Process com uma string
-    unica, dividida SO por espaco em branco - aspas nao viram agrupamento
-    (bug conhecido da lib: github.com/klemens-morgenstern/boost-process/
-    issues/128). Um "bash -c '<script com ; >'" vira argv quebrado e o
-    bash morre com erro de sintaxe (exit code 2). Validado empiricamente
-    na Fase 0 (poc/fase0.sh) contra o Apollo de verdade.
+    Comandos de LIGAR/CONFIGURAR a tela do host (kscreen-doctor: ativa o
+    target_output, seta modo/resolucao, HDR, desativa os outros
+    outputs) - em ordem de EXECUCAO simples (nao e' mais array do Apollo,
+    e' uma lista de strings que o Runner (Rust) roda direto via shell,
+    ANTES de dar exec no Moonlight - ver session.rs/register_session).
 
-    O Apollo executa os "do" na ordem do array e os "undo" na ordem
-    REVERSA (proc_t::terminate() em process.cpp) - os passos de undo
-    abaixo sao posicionados de tras pra frente por isso.
+    O Apollo NAO tem mais prep-cmd nenhum (nem do, nem undo) - decisao
+    explicita de tirar essa responsabilidade dele (mais "plug and play":
+    o Apollo so' precisa saber conectar e rodar o "cmd", quem manda de
+    verdade na tela e no ciclo de vida da sessao e' o Runner, que ja
+    precisa saber ligar/desligar telas pro fechamento mesmo - ver
+    build_restore_commands). O Runner deixou de ser opcional por causa
+    disso: sem ele, a troca de tela simplesmente nao acontece.
     """
     target = host_cfg["target_output"]
     resolution = host_cfg["resolution"]
     fps = host_cfg["fps"]
     hdr_state = "enable" if host_cfg.get("hdr") else "disable"
     disable_outputs = host_cfg.get("disable_outputs", [])
-    n = len(disable_outputs)
-    length = 7 + n
 
-    do_actions = [
+    commands = [
         f"kscreen-doctor output.{target}.enable",
         f"kscreen-doctor output.{target}.mode.{resolution}@{fps}",
         f"kscreen-doctor output.{target}.hdr.{hdr_state} output.{target}.wcg.{hdr_state}",
-    ] + [f"kscreen-doctor output.{o}.disable" for o in disable_outputs]
-
-    steps = [{"do": "", "undo": ""} for _ in range(length)]
-    for i, action in enumerate(do_actions):
-        steps[i]["do"] = action
-
-    # 20s de graca (nao 5s): o "reaper" do Steam e' quem derruba a arvore
-    # inteira do jogo (proton/wine/exe) quando recebe o SIGTERM. Se o jogo
-    # demorar mais que a janela de graca pra responder, o SIGKILL seguinte
-    # mata o reaper ANTES dele terminar de derrubar os filhos, deixando
-    # processos orfaos rodando pra sempre (confirmado no device: 3 arvores
-    # de RESIDENT EVIL 4 orfas acumuladas de testes anteriores, competindo
-    # pela GPU - por isso nada aparecia na tela). PRD ja antecipava esse
-    # risco ("sleep 5 pode nao ser suficiente pra jogos com autosave raro").
-    steps[length - 1]["undo"] = f"pkill -TERM -f AppId={app_id}"
-    steps[length - 2]["undo"] = "sleep 20"
-    steps[length - 3]["undo"] = f"pkill -KILL -f AppId={app_id}"
-    steps[length - 4]["undo"] = "setsid steam steam://close/bigpicture"
-    steps[length - 5]["undo"] = "sleep 2"
-    for k, o in enumerate(disable_outputs):
-        steps[length - 6 - k]["undo"] = f"kscreen-doctor output.{o}.enable"
-    steps[length - 6 - n]["undo"] = "sleep 1"
-    # So desliga o target_output no undo se tiver outro output pra restaurar
-    # no lugar (disable_outputs nao vazio) - senao a tela fica preta sem
-    # nada pra mostrar (confirmado no device: target_output = monitor
-    # principal de verdade, disable_outputs=[] pra debug, desligar ele sem
-    # ligar nada de volta apagou a tela toda).
-    if disable_outputs:
-        steps[0]["undo"] = f"kscreen-doctor output.{target}.disable"
-
-    return steps
+    ]
+    commands.extend(f"kscreen-doctor output.{o}.disable" for o in disable_outputs)
+    return commands
 
 
 def build_restore_commands(host_cfg: dict) -> list:
     """
-    So' a parte de RESTAURAR TELA do undo de build_prep_cmd (fecha o Big
-    Picture, religa os outputs desativados, desliga o target) - SEM o
-    pkill/sleep-20/pkill de matar o jogo. Em ordem de EXECUCAO (nao e'
-    array do Apollo, e' uma lista simples pro Runner rodar direto via
-    shell, um comando por vez, na ordem que aparece).
-
-    Usado so' pelo fechamento AUTONOMO (watchdog do Runner - session.rs):
-    quando o watchdog chama isso, o processo do jogo JA foi confirmado
-    morto (is_app_id_running() == False) - o periodo de graca de 20s do
-    build_prep_cmd existe pra um jogo que TALVEZ ainda esteja vivo (ver
-    comentario la'), o que nao e' o caso aqui. Rodar esses 20s de espera
-    de qualquer jeito so' atrasa a resposta do usuario sem nenhum
-    beneficio (nada pra matar). O fechamento MANUAL ("Fechar conexao")
-    continua usando o array cheio de build_prep_cmd via Apollo, porque
-    nesse caso o jogo pode genuinamente ainda estar rodando.
+    Comandos de RESTAURAR a tela do host (fecha o Big Picture, religa os
+    outputs desativados, desliga o target) - em ordem de EXECUCAO. Usado
+    pelo Runner tanto no fechamento AUTONOMO (watchdog detecta que o jogo
+    fechou sozinho) quanto no MANUAL ("Fechar conexao"), depois de
+    garantir (session.rs) que o processo do jogo ja acabou de verdade -
+    ver kill_game_process no lado Rust, que cuida de matar o jogo ANTES
+    de rodar isso quando o fechamento e' manual (pode estar genuinamente
+    vivo ainda).
     """
     target = host_cfg["target_output"]
     disable_outputs = host_cfg.get("disable_outputs", [])
@@ -189,9 +154,11 @@ class ApolloClient:
         return self._request("POST", "/api/apps", payload)
 
     def close_app(self) -> dict:
-        # Termina a sessao/app rodando no momento no Apollo (proc::terminate()
-        # em process.cpp), o que dispara o "undo" do prep-cmd em ordem
-        # reversa - mata o jogo pelo AppId e restaura os displays.
+        # Termina a conexao/stream ativa no Apollo (proc::terminate() em
+        # process.cpp) - o Apollo NAO tem prep-cmd configurado (ver
+        # build_display_commands/build_restore_commands), entao isso so'
+        # derruba a conexao em si; matar o jogo e restaurar a tela e'
+        # responsabilidade do Runner (Rust), que roda ANTES de chamar isso.
         return self._request("POST", "/api/apps/close", {})
 
 

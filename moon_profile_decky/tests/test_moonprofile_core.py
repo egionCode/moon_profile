@@ -6,7 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "py_modules"))
 
-from moonprofile_core import build_prep_cmd, build_restore_commands, classify_apollo_error, detect_context
+from moonprofile_core import build_display_commands, build_restore_commands, classify_apollo_error, detect_context
 import json
 import urllib.error
 
@@ -47,58 +47,37 @@ class TestDetectContext:
         assert detect_context(str(drm_root)) == "handheld"
 
 
-class TestBuildPrepCmd:
-    def test_do_actions_configure_the_target_output(self):
+class TestBuildDisplayCommands:
+    def test_configures_the_target_output_in_order(self):
         host_cfg = {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": False, "disable_outputs": []}
 
-        steps = build_prep_cmd(host_cfg, app_id=123)
+        commands = build_display_commands(host_cfg)
 
-        do_actions = [s["do"] for s in steps if s["do"]]
-        assert do_actions == [
+        assert commands == [
             "kscreen-doctor output.HDMI-A-1.enable",
             "kscreen-doctor output.HDMI-A-1.mode.1920x1080@60",
             "kscreen-doctor output.HDMI-A-1.hdr.disable output.HDMI-A-1.wcg.disable",
         ]
 
-    def test_undo_kills_the_app_before_restoring_displays(self):
-        # ordem REVERSA da "do" (Apollo desfaz na ordem inversa) - o
-        # primeiro undo que roda tem que ser o kill do jogo, nao o
-        # restauro de tela (senao a tela volta enquanto o jogo/orfaos
-        # ainda estao vivos disputando GPU).
-        host_cfg = {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": False, "disable_outputs": []}
+    def test_enables_hdr_when_the_profile_wants_it(self):
+        host_cfg = {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": True, "disable_outputs": []}
 
-        steps = build_prep_cmd(host_cfg, app_id=123)
-        # Apollo roda os "undo" na ordem REVERSA do array (indice mais
-        # alto primeiro) - reverte pra obter a ordem de EXECUCAO de
-        # verdade, nao a ordem em que os campos aparecem no array.
-        undo_actions = [s["undo"] for s in reversed(steps) if s["undo"]]
+        commands = build_display_commands(host_cfg)
 
-        assert undo_actions[0] == "pkill -TERM -f AppId=123"
-        assert "sleep 20" in undo_actions
-        assert "pkill -KILL -f AppId=123" in undo_actions
+        assert "kscreen-doctor output.HDMI-A-1.hdr.enable output.HDMI-A-1.wcg.enable" in commands
 
-    def test_does_not_disable_target_output_without_a_fallback_display(self):
-        # confirmado no device: desligar o unico output sem religar outro
-        # no lugar apaga a tela toda - so' desliga o target no undo se
-        # houver disable_outputs pra restaurar em seguida.
-        host_cfg = {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": False, "disable_outputs": []}
-
-        steps = build_prep_cmd(host_cfg, app_id=123)
-
-        assert steps[0]["undo"] == ""
-
-    def test_disables_target_output_when_a_fallback_display_exists(self):
+    def test_disables_the_other_outputs_after_configuring_the_target(self):
         host_cfg = {
             "target_output": "HDMI-A-1",
             "resolution": "1920x1080",
             "fps": 60,
             "hdr": False,
-            "disable_outputs": ["DP-2"],
+            "disable_outputs": ["DP-2", "DP-3"],
         }
 
-        steps = build_prep_cmd(host_cfg, app_id=123)
+        commands = build_display_commands(host_cfg)
 
-        assert steps[0]["undo"] == "kscreen-doctor output.HDMI-A-1.disable"
+        assert commands[3:] == ["kscreen-doctor output.DP-2.disable", "kscreen-doctor output.DP-3.disable"]
 
 
 class TestBuildRestoreCommands:

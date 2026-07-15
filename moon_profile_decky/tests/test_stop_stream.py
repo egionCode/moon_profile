@@ -1,17 +1,16 @@
 """
-stop_stream() prefere pedir pro MoonProfile Runner fechar a sessao (ele
-ja sabe qual app_id/credenciais usar, registrados por runner.py no
-lancamento - ver session.rs) e so' cai pro caminho antigo (Deck falando
-com o Apollo direto) se o Runner estiver inalcancavel ou sem sessao
-registrada - o Runner e' opcional, nunca pode ser um requisito pra
-"Fechar conexao" funcionar.
+stop_stream() so' fala com o MoonProfile Runner - ele ja sabe qual
+app_id/credenciais usar (registrados por runner.py no lancamento, ver
+session.rs), mata o jogo se ainda estiver vivo e restaura a tela ANTES de
+avisar o Apollo. O Runner NAO e' mais opcional: o Apollo nao tem prep-cmd
+nenhum (nem do, nem undo), entao nao ha' fallback sensato pra chamar ele
+direto - um erro aqui e' reportado como erro de verdade.
 """
 
 import http.server
 import json
 import threading
-
-import pytest
+import urllib.error
 
 
 async def _save_config(plugin_module, **overrides):
@@ -47,70 +46,37 @@ class FakeRunnerClientUnreachable:
         pass
 
     def close_session(self):
-        import urllib.error
-
         raise urllib.error.URLError("connection refused")
 
 
-class FakeApolloClientOk:
-    def __init__(self, host, username, password):
-        self.host = host
-
-    def login(self):
-        pass
-
-    def close_app(self):
-        pass
-
-
-class FakeApolloClientFails:
-    def __init__(self, host, username, password):
-        self.host = host
-
-    def login(self):
-        pass
-
-    def close_app(self):
-        raise OSError("apollo unreachable too")
-
-
-class TestStopStreamPrefersTheRunner:
-    async def test_returns_ok_immediately_when_the_runner_closes_it(self, plugin_module, monkeypatch):
+class TestStopStreamUsesTheRunner:
+    async def test_returns_ok_when_the_runner_closes_it(self, plugin_module, monkeypatch):
         await _save_config(plugin_module)
         monkeypatch.setattr(plugin_module, "RunnerClient", FakeRunnerClientOk)
-        monkeypatch.setattr(plugin_module, "ApolloClient", FakeApolloClientFails)  # nao deveria nem ser chamado
 
         result = await plugin_module.Plugin().stop_stream()
 
         assert result == {"ok": True}
 
-    async def test_falls_back_to_apollo_when_the_runner_has_no_active_session(self, plugin_module, monkeypatch):
+    async def test_reports_the_runner_error_when_there_is_no_active_session(self, plugin_module, monkeypatch):
         await _save_config(plugin_module)
         monkeypatch.setattr(plugin_module, "RunnerClient", FakeRunnerClientNoSession)
-        monkeypatch.setattr(plugin_module, "ApolloClient", FakeApolloClientOk)
 
         result = await plugin_module.Plugin().stop_stream()
 
-        assert result == {"ok": True}
+        assert result == {"ok": False, "error": "Nenhuma sessao registrada no Runner"}
 
-    async def test_falls_back_to_apollo_when_the_runner_is_unreachable(self, plugin_module, monkeypatch):
+    async def test_reports_an_error_when_the_runner_is_unreachable(self, plugin_module, monkeypatch):
+        # Sem fallback pro Apollo direto - ele nao tem prep-cmd nenhum,
+        # chamar ele sem o Runner so' derrubaria a conexao sem restaurar a
+        # tela nem matar o jogo.
         await _save_config(plugin_module)
         monkeypatch.setattr(plugin_module, "RunnerClient", FakeRunnerClientUnreachable)
-        monkeypatch.setattr(plugin_module, "ApolloClient", FakeApolloClientOk)
-
-        result = await plugin_module.Plugin().stop_stream()
-
-        assert result == {"ok": True}
-
-    async def test_reports_apollo_error_when_both_paths_fail(self, plugin_module, monkeypatch):
-        await _save_config(plugin_module)
-        monkeypatch.setattr(plugin_module, "RunnerClient", FakeRunnerClientUnreachable)
-        monkeypatch.setattr(plugin_module, "ApolloClient", FakeApolloClientFails)
 
         result = await plugin_module.Plugin().stop_stream()
 
         assert result["ok"] is False
-        assert "error" in result
+        assert "Runner" in result["error"]
 
     async def test_requires_a_configured_host_before_trying_anything(self, plugin_module):
         result = await plugin_module.Plugin().stop_stream()

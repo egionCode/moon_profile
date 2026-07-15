@@ -6,7 +6,7 @@ import urllib.request
 import urllib.error
 
 import decky
-from moonprofile_core import RUNNER_PORT, ApolloClient, classify_apollo_error, detect_context
+from moonprofile_core import RUNNER_PORT, detect_context
 
 APP_NAME = "SteamGame"
 
@@ -63,18 +63,10 @@ class RunnerClient:
         # Sem corpo - o Runner ja tem host_app_id/credenciais guardados em
         # memoria desde que runner.py registrou a sessao no lancamento
         # (ver session.rs). Se nao houver sessao registrada, o Runner
-        # responde {"ok": False, "error": "..."} (nao levanta excecao) -
-        # quem chama decide se cai pro caminho antigo (Apollo direto).
+        # responde {"ok": False, "error": "..."} (nao levanta excecao).
         req = urllib.request.Request(f"{self.base_url}/session/close", data=b"", method="POST")
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read())
-
-
-def _apollo_error_response(host: str, error: Exception) -> dict:
-    # Wrapper fino - classify_apollo_error (moonprofile_core, compartilhado
-    # com runner.py) devolve so' a mensagem; aqui empacota no formato de
-    # resposta RPC que o frontend espera ({"ok": False, "error": ...}).
-    return {"ok": False, "error": classify_apollo_error(host, error)}
 
 
 class Plugin:
@@ -197,38 +189,29 @@ class Plugin:
         }
 
     async def stop_stream(self) -> dict:
-        # Prefere o Runner (host): ele ja tem a sessao registrada por
-        # runner.py no lancamento (app_id + credenciais em memoria) e sabe
-        # fechar/desfazer no Apollo sozinho. So' cai pro caminho antigo
-        # (Deck falando com o Apollo direto) se o Runner estiver
-        # inalcancavel ou nao tiver nenhuma sessao registrada (ele e'
-        # opcional - continua funcionando pra quem nao instalou, e cobre o
-        # caso de o Runner ter reiniciado no meio de uma sessao).
+        # O Runner (host) e' quem fecha de verdade - ele ja tem a sessao
+        # registrada por runner.py no lancamento (app_id + credenciais em
+        # memoria), mata o jogo se ainda estiver vivo e restaura a tela
+        # ANTES de avisar o Apollo. O Runner NAO e' mais opcional: o
+        # Apollo nao tem prep-cmd nenhum (nem do, nem undo) - chamar ele
+        # direto sem o Runner so' derrubaria a conexao sem restaurar nada,
+        # entao um erro aqui e' reportado como erro de verdade, nao um
+        # fallback silencioso.
         config = await self.get_config()
         if not config.get("host"):
             return {"ok": False, "error": "Configure o host do Apollo primeiro"}
 
         host = config["host"]
-        username = config["username"]
-        password = config["password"]
 
         try:
             client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
             result = client.close_session()
-            if result.get("ok"):
-                return result
-            decky.logger.info(f"Runner sem sessao ativa pra fechar ({result.get('error')}), tentando Apollo direto")
+            if not result.get("ok"):
+                decky.logger.error(f"Runner nao conseguiu fechar a sessao: {result.get('error')}")
+            return result
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.info(f"Runner inalcancavel pra fechar sessao ({e}), tentando Apollo direto")
-
-        try:
-            apollo = ApolloClient(host, username, password)
-            apollo.login()
-            apollo.close_app()
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.error(f"Falha ao fechar sessao no Apollo: {e}")
-            return _apollo_error_response(host, e)
-        return {"ok": True}
+            decky.logger.error(f"Falha ao falar com o MoonProfile Runner pra fechar a sessao: {e}")
+            return {"ok": False, "error": f"Nao consegui falar com o MoonProfile Runner: {e}"}
 
     async def list_host_games(self) -> dict:
         # Chamado pelo frontend (gameSync.ts) pro botao "Sincronizar jogos

@@ -26,6 +26,17 @@ Launch Options do atalho UMA vez, na criacao (ver ensureGameShortcut em
 src/gameShortcuts.ts) - e' o AppID real do jogo no Steam do HOST. Tudo mais
 (qual perfil usar, config do Apollo) e' resolvido aqui, na hora do
 lancamento, lendo os mesmos arquivos que o main.py le.
+
+MUDANCA IMPORTANTE #2 (Apollo sem prep-cmd, Runner obrigatorio): o Apollo
+NAO liga/desliga mais a tela do host sozinho - isso e' 100% responsabilidade
+do MoonProfile Runner (Rust, ver moon_profile_runner/), tanto no lancamento
+(register_with_runner manda os display_commands, que o Runner roda ANTES
+de responder) quanto no fechamento (restore_commands, autonomo ou manual).
+O Apollo fica so' com o "cmd" (conectar + rodar o jogo) - mais simples,
+"plug and play", e da' ao Deck controle total sobre o ciclo de vida da
+sessao. Por isso o Runner deixou de ser opcional: sem ele, a tela
+simplesmente nao troca (ver main(), que aborta o lancamento se
+register_with_runner falhar, igual ja fazia se configure_apollo falhasse).
 """
 import os
 import sys
@@ -45,7 +56,7 @@ from moonprofile_core import (  # noqa: E402 (import depois do sys.path.insert e
     RUNNER_PORT,
     ApolloClient,
     CODEC_FLAGS,
-    build_prep_cmd,
+    build_display_commands,
     build_restore_commands,
     classify_apollo_error,
     detect_context,
@@ -83,8 +94,14 @@ def _pick_profile(profiles: list, context: str) -> dict | None:
 def configure_apollo(host_app_id: str) -> dict:
     """
     Replica a parte de stream_game() do main.py que fala com o Apollo -
-    login, monta prep-cmd, salva o app "SteamGame" com o AppID deste jogo.
-    Levanta excecao se algo falhar (chamador decide o que fazer).
+    login, salva o app "SteamGame" com o AppID deste jogo. O Apollo NAO
+    recebe mais prep-cmd nenhum (nem do, nem undo) - quem liga/desliga a
+    tela agora e' sempre o Runner (Rust), tanto no lancamento quanto no
+    fechamento (ver register_with_runner/build_display_commands). Isso
+    deixa o Apollo mais simples ("plug and play" - so' precisa saber
+    conectar e rodar o cmd) e da' ao Deck controle total sobre o ciclo de
+    vida da sessao. Levanta excecao se algo falhar (chamador decide o que
+    fazer).
     """
     config = _load_json(os.path.join(_settings_dir(), "config.json"))
     profiles = _load_json(os.path.join(_settings_dir(), "profiles.json"))
@@ -97,38 +114,7 @@ def configure_apollo(host_app_id: str) -> dict:
     client = ApolloClient(config["host"], config["username"], config["password"])
     client.login()
     uuid = client.find_app_uuid(APP_NAME)
-    prep_cmd = build_prep_cmd(profile["host"], host_app_id)
     client.save_app({
-        "name": APP_NAME,
-        "cmd": f"steam steam://rungameid/{host_app_id}",
-        "uuid": uuid,
-        "auto-detach": True,
-        "wait-all": False,
-        "exit-timeout": 5,
-        "exclude-global-prep-cmd": False,
-        "elevated": False,
-        "prep-cmd": prep_cmd,
-        "output": f"/tmp/apollo-steamgame-{host_app_id}.log",
-    })
-
-    return {"config": config, "profile": profile, "uuid": uuid}
-
-
-def _quick_close_payload(uuid: str, host_app_id: str) -> dict:
-    """
-    Mesmo "SteamGame" de sempre, mas com prep-cmd VAZIO - o Apollo pula o
-    array de undo inteiro quando os campos undo_cmd estao vazios
-    (confirmado lendo process.cpp: "if (cmd.undo_cmd.empty()) continue").
-    Usado so' pelo fechamento AUTONOMO do watchdog (session.rs), que roda
-    build_restore_commands() ele mesmo, direto no host, ANTES de mandar o
-    Apollo fechar - reconfigurar pra undo vazio evita que o Apollo rode de
-    novo (e mais devagar, com os pkill/sleep-20 do build_prep_cmd
-    original) um trabalho que ja foi feito. So' faz sentido chamar isso
-    quando o jogo ja foi confirmado morto (is_app_id_running == False) -
-    nao remove a protecao do fechamento MANUAL, que continua usando o
-    array cheio via Apollo (ver main.py:stop_stream).
-    """
-    return {
         "name": APP_NAME,
         "cmd": f"steam steam://rungameid/{host_app_id}",
         "uuid": uuid,
@@ -139,39 +125,44 @@ def _quick_close_payload(uuid: str, host_app_id: str) -> dict:
         "elevated": False,
         "prep-cmd": [],
         "output": f"/tmp/apollo-steamgame-{host_app_id}.log",
-    }
+    })
+
+    return {"config": config, "profile": profile}
 
 
-def register_with_runner(config: dict, host_app_id: str, profile: dict, uuid: str) -> None:
+def register_with_runner(config: dict, host_app_id: str, profile: dict) -> None:
     """
-    Avisa o MoonProfile Runner (daemon no host) que esta sessao comecou -
-    credenciais em memoria, nunca gravadas em disco no host (ver
-    session.rs). Dai o Runner fica de olho no processo sozinho (sysinfo)
-    e fecha/desfaz no Apollo quando detectar que o jogo fechou, sem
-    precisar do Deck perguntar nada. Best-effort: o Runner e' opcional -
-    falha aqui NAO deve impedir o jogo de rodar (so' significa que
-    "Fechar conexao" e o auto-fechamento vao cair no caminho antigo,
-    Deck falando com o Apollo direto - ver main.py:stop_stream).
+    Registra a sessao no MoonProfile Runner (daemon no host) - app_id +
+    credenciais do Apollo EM MEMORIA (nunca gravadas em disco no host, ver
+    session.rs), mais os comandos de LIGAR a tela (build_display_commands)
+    e de RESTAURAR (build_restore_commands). O Runner roda os comandos de
+    ligar a tela AGORA MESMO, de forma sincrona (essa chamada so' retorna
+    depois disso) - e' por isso que precisa acontecer ANTES do exec no
+    Moonlight, senao o stream comecaria antes da tela estar no estado
+    certo.
+
+    O Runner deixou de ser OPCIONAL por causa disso: como o Apollo nao
+    tem mais prep-cmd nenhum, sem o Runner a tela simplesmente nao troca
+    - por isso essa funcao levanta excecao em vez de so' logar e seguir
+    (ver main() abaixo, que aborta o lancamento se isso falhar, do mesmo
+    jeito que ja aborta se configure_apollo falhar).
     """
-    try:
-        body = json.dumps({
-            "app_id": host_app_id,
-            "username": config["username"],
-            "password": config["password"],
-            "restore_commands": build_restore_commands(profile["host"]),
-            "quick_close_payload": _quick_close_payload(uuid, host_app_id),
-        }).encode()
-        req = urllib.request.Request(
-            f"http://{config['host']}:{config.get('runner_port', RUNNER_PORT)}/session/register",
-            data=body,
-            method="POST",
-        )
-        req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=5):
-            pass
-        print(f"Sessao registrada no Runner ({config['host']}:{config.get('runner_port', RUNNER_PORT)}) pro app_id={host_app_id}", file=sys.stderr)
-    except (urllib.error.URLError, OSError) as e:
-        print(f"Nao consegui registrar a sessao no Runner (seguindo sem ele): {e}", file=sys.stderr)
+    body = json.dumps({
+        "app_id": host_app_id,
+        "username": config["username"],
+        "password": config["password"],
+        "display_commands": build_display_commands(profile["host"]),
+        "restore_commands": build_restore_commands(profile["host"]),
+    }).encode()
+    req = urllib.request.Request(
+        f"http://{config['host']}:{config.get('runner_port', RUNNER_PORT)}/session/register",
+        data=body,
+        method="POST",
+    )
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=30):  # 30s: da tempo dos display_commands rodarem no Runner
+        pass
+    print(f"Sessao registrada no Runner ({config['host']}:{config.get('runner_port', RUNNER_PORT)}) pro app_id={host_app_id}", file=sys.stderr)
 
 
 def main() -> None:
@@ -209,7 +200,19 @@ def main() -> None:
         sys.exit(1)
 
     config = result["config"]
-    register_with_runner(config, host_app_id, result["profile"], result["uuid"])
+
+    try:
+        register_with_runner(config, host_app_id, result["profile"])
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+        # O Runner NAO e' mais opcional - o Apollo nao tem prep-cmd
+        # nenhum, entao sem o Runner a tela do host nunca troca pro
+        # target_output/resolucao certos. Abortar aqui (em vez de
+        # streamar mesmo assim) da' o mesmo tratamento de erro que
+        # configure_apollo ja tem - claro, no log, em vez de uma tela
+        # quebrada silenciosa.
+        print(f"Falha ao registrar no MoonProfile Runner (obrigatorio): {e}", file=sys.stderr)
+        sys.exit(1)
+
     moonlight_cfg = result["profile"]["moonlight"]
     codec_flag = CODEC_FLAGS.get(moonlight_cfg["codec"], "auto")
     hdr_flag = "--hdr" if moonlight_cfg.get("hdr") else "--no-hdr"
