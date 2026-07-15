@@ -180,14 +180,6 @@ class ApolloClient:
     def save_app(self, payload: dict) -> dict:
         return self._request("POST", "/api/apps", payload)
 
-    def close_app(self) -> dict:
-        # Termina a conexao/stream ativa no Apollo (proc::terminate() em
-        # process.cpp) - o Apollo NAO tem prep-cmd configurado (ver
-        # build_display_commands/build_restore_commands), entao isso so'
-        # derruba a conexao em si; matar o jogo e restaurar a tela e'
-        # responsabilidade do Runner (Rust), que roda ANTES de chamar isso.
-        return self._request("POST", "/api/apps/close", {})
-
 
 def classify_apollo_error(host: str, error: Exception) -> str:
     """
