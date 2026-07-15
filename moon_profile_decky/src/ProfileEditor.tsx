@@ -1,7 +1,8 @@
-import { CSSProperties, useState } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import { PanelSection, PanelSectionRow, TextField, DropdownItem, ToggleField, DialogButton, Focusable } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { Profile } from "./types";
+import { listHostDisplays } from "./api";
+import { HostDisplay, Profile } from "./types";
 
 // Mesmo padrao do ProfileList.tsx: "ButtonItem"/"TextField" ocupam a row
 // inteira sozinhos, por isso dois lado a lado (Cancelar/Salvar, Largura/
@@ -47,9 +48,28 @@ interface ProfileEditorProps {
 export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }: ProfileEditorProps) {
   const [draft, setDraft] = useState<Profile>(profile);
   const [disableOutputsText, setDisableOutputsText] = useState(draft.host.disable_outputs.join(", "));
+  // Monitores de verdade do host (via MoonProfile Runner - ver
+  // moon_profile_runner/src-tauri/src/displays.rs). Enquanto vazio (ainda
+  // carregando, ou o Runner esta' inalcancavel), os campos abaixo caem pro
+  // texto livre de antes - nao deixa o usuario travado sem poder editar
+  // so' porque o Runner nao respondeu.
+  const [displays, setDisplays] = useState<HostDisplay[]>([]);
+
+  useEffect(() => {
+    listHostDisplays().then((result) => {
+      if (result.ok) {
+        setDisplays(result.displays);
+      }
+    });
+  }, []);
 
   const moonlightRes = splitResolution(draft.moonlight.resolution);
   const hostRes = splitResolution(draft.host.resolution);
+
+  const targetOutputOptions = displays.map((d) => ({
+    data: d.name,
+    label: d.connected ? d.name : `${d.name} (desconectado)`,
+  }));
 
   const onSubmit = () => {
     if (!draft.name.trim()) {
@@ -73,10 +93,16 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
       return;
     }
 
-    const disable_outputs = disableOutputsText
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    // Com a lista de monitores de verdade (displays.length > 0), o toggle
+    // de cada output ja mantem draft.host.disable_outputs atualizado -
+    // so' precisa parsear o texto livre no fallback (Runner inalcancavel).
+    const disable_outputs =
+      displays.length > 0
+        ? draft.host.disable_outputs
+        : disableOutputsText
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
 
     onSave({ ...draft, host: { ...draft.host, disable_outputs } });
   };
@@ -166,11 +192,20 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
 
       <PanelSection title="Host (Apollo)">
         <PanelSectionRow>
-          <TextField
-            label="Output alvo"
-            value={draft.host.target_output}
-            onChange={(e) => setDraft({ ...draft, host: { ...draft.host, target_output: e.target.value } })}
-          />
+          {displays.length > 0 ? (
+            <DropdownItem
+              label="Output alvo"
+              rgOptions={targetOutputOptions}
+              selectedOption={draft.host.target_output}
+              onChange={(o) => setDraft({ ...draft, host: { ...draft.host, target_output: o.data } })}
+            />
+          ) : (
+            <TextField
+              label="Output alvo"
+              value={draft.host.target_output}
+              onChange={(e) => setDraft({ ...draft, host: { ...draft.host, target_output: e.target.value } })}
+            />
+          )}
         </PanelSectionRow>
         <PanelSectionRow>
           <Focusable style={rowStyle}>
@@ -218,13 +253,35 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
             onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, wcg: checked } })}
           />
         </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label="Outputs a desabilitar (separados por virgula)"
-            value={disableOutputsText}
-            onChange={(e) => setDisableOutputsText(e.target.value)}
-          />
-        </PanelSectionRow>
+        {displays.length > 0 ? (
+          // Lista dinamica - um toggle por monitor de verdade do host
+          // (menos o que ja' esta' escolhido como output alvo, nao faz
+          // sentido desabilitar o mesmo que acabou de ser ligado).
+          displays
+            .filter((d) => d.name !== draft.host.target_output)
+            .map((d) => (
+              <PanelSectionRow key={d.name}>
+                <ToggleField
+                  label={`Desabilitar ${d.name}${d.connected ? "" : " (desconectado)"}`}
+                  checked={draft.host.disable_outputs.includes(d.name)}
+                  onChange={(checked) => {
+                    const disable_outputs = checked
+                      ? [...draft.host.disable_outputs, d.name]
+                      : draft.host.disable_outputs.filter((o) => o !== d.name);
+                    setDraft({ ...draft, host: { ...draft.host, disable_outputs } });
+                  }}
+                />
+              </PanelSectionRow>
+            ))
+        ) : (
+          <PanelSectionRow>
+            <TextField
+              label="Outputs a desabilitar (separados por virgula)"
+              value={disableOutputsText}
+              onChange={(e) => setDisableOutputsText(e.target.value)}
+            />
+          </PanelSectionRow>
+        )}
       </PanelSection>
 
       <PanelSection>

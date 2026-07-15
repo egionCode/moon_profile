@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import { Config, GameShortcuts, ListGamesResult, Profile, StreamResult } from "./types";
+import { Config, GameShortcuts, ListDisplaysResult, ListGamesResult, Profile, StreamResult } from "./types";
 
 export const getConfig = callable<[], Config>("get_config");
 export const saveConfig = callable<[config: Config], void>("save_config");
@@ -15,6 +15,7 @@ export const stopStream = callable<[], StreamResult>("stop_stream");
 export const getLogs = callable<[lines: number], string>("get_logs");
 
 export const listHostGames = callable<[], ListGamesResult>("list_host_games");
+export const listHostDisplays = callable<[], ListDisplaysResult>("list_host_displays");
 
 export const getGameShortcuts = callable<[], GameShortcuts>("get_game_shortcuts");
 export const saveGameShortcuts = callable<[shortcuts: GameShortcuts], void>("save_game_shortcuts");

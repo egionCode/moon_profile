@@ -70,6 +70,21 @@ export interface ListGamesResult {
   error?: string;
 }
 
+// Um monitor/output de tela do host (via kscreen-doctor -j, ver
+// moon_profile_runner/src-tauri/src/displays.rs) - alimenta o select de
+// "Output alvo" e a lista de outputs a desabilitar no ProfileEditor.tsx.
+export interface HostDisplay {
+  name: string; // ex: "HDMI-A-1"
+  connected: boolean;
+  enabled: boolean;
+}
+
+export interface ListDisplaysResult {
+  ok: boolean;
+  displays: HostDisplay[];
+  error?: string;
+}
+
 // Um atalho por jogo ja criado no Deck - persistido em
 // game_shortcuts.json (ver main.py), chave e' o host_app_id. Alimenta a
 // aba "Jogos" (grid) alem de servir pra gameShortcuts.ts nao recriar

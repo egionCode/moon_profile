@@ -59,6 +59,14 @@ class RunnerClient:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
 
+    def list_displays(self) -> list:
+        # Monitores/outputs de tela do host (via kscreen-doctor -j, ver
+        # displays.rs) - alimenta o ProfileEditor.tsx com opcoes de
+        # verdade em vez do usuario digitar o nome do output na mao.
+        req = urllib.request.Request(f"{self.base_url}/displays")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+
     def close_session(self) -> dict:
         # Sem corpo - o Runner ja tem host_app_id/credenciais guardados em
         # memoria desde que runner.py registrou a sessao no lancamento
@@ -233,6 +241,24 @@ class Plugin:
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             decky.logger.error(f"Falha ao listar jogos do MoonProfile Runner: {e}")
             return {"ok": False, "error": f"Nao consegui falar com o MoonProfile Runner: {e}", "games": []}
+
+    async def list_host_displays(self) -> dict:
+        # Chamado pelo ProfileEditor.tsx pra popular o select de
+        # "Output alvo" e a lista de outputs a desabilitar com os
+        # monitores de verdade do host, em vez do usuario digitar o
+        # nome na mao.
+        config = await self.get_config()
+        host = config.get("host")
+        if not host:
+            return {"ok": False, "error": "Configure o host do Apollo primeiro (aba Config do Apollo)", "displays": []}
+
+        try:
+            client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
+            displays = client.list_displays()
+            return {"ok": True, "displays": displays}
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            decky.logger.error(f"Falha ao listar monitores do MoonProfile Runner: {e}")
+            return {"ok": False, "error": f"Nao consegui falar com o MoonProfile Runner: {e}", "displays": []}
 
     async def _main(self):
         decky.logger.info("MoonProfile carregado")
