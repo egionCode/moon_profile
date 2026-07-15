@@ -2,6 +2,19 @@
 
 Regra pra qualquer agente (Claude Code ou outro) trabalhando neste monorepo.
 
+## O Runner (Rust) controla tudo que mexe no host
+
+Qualquer controle do sistema operacional do HOST (tela/monitores via
+kscreen-doctor, cursor, processos, o que mais surgir) passa pelo
+MoonProfile Runner (Rust, `moon_profile_runner/`), nunca pelo Apollo
+(que só conecta e roda o `cmd` - sem prep-cmd nenhum, ver
+`moon_profile_decky/py_modules/moonprofile_core.py`) nem por um script
+solto em outro lugar. O Deck manda o QUE fazer (comandos já resolvidos,
+ex: `build_display_commands`/`build_restore_commands` em
+`moonprofile_core.py`); o Runner é quem RODA de verdade no host. Centraliza
+o controle do host num lugar só, testável e com log, em vez de espalhado
+entre Apollo/Deck/scripts soltos.
+
 ## Toda feature nova precisa vir com teste automatizado
 
 Ao criar ou alterar uma feature, adicione (ou atualize) os testes que cobrem
