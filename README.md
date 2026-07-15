@@ -1,7 +1,7 @@
 # MoonProfile
 
 Streaming Moonlight/Apollo do Steam Deck com perfis por contexto (docked
-vs handheld), sem precisar reconfigurar bitrate/resolução/HDR na mão a
+vs handheld), sem precisar reconfigurar bitrate/resolução/HDR na mão amais reflete a realidade sozinho
 cada sessão e sem depender de um daemon como o Buddy do MoonDeck.
 
 O projeto é dividido em dois componentes que se falam por HTTP na rede
@@ -138,56 +138,6 @@ qualquer jogo da biblioteca.
        (SIGTERM, espera adaptativa, SIGKILL) e restaura a tela do host
        (religa os outputs desligados, fecha o Big Picture se abriu)
 ```
-
-Pontos de arquitetura que valem a pena entender:
-
-- **O Apollo não decide mais nada sozinho.** Ele só sabe conectar e
-  rodar um `cmd` - todo o controle de tela/cursor/processo do host é do
-  Runner (regra documentada em `AGENTS.md`: "o Runner controla tudo que
-  mexe no host"). Isso deixa o Apollo mais simples e dá ao Deck controle
-  total sobre o ciclo de vida da sessão.
-- **O Runner é obrigatório, não um extra opcional.** Sem ele rodando no
-  host, a tela simplesmente não troca - `runner.py` aborta o lançamento
-  se não conseguir registrar a sessão nele.
-- **Fechamento é assimétrico de propósito**: o Deck sai da tela de
-  streaming instantaneamente (Apollo avisado primeiro), enquanto matar o
-  jogo e restaurar monitores acontece depois, em background, sem o
-  usuário esperar.
-- **Atalhos de jogo são non-Steam shortcuts de verdade**, não um botão
-  injetado na UI - o Gamescope (compositor do Modo Jogo) só foca janelas
-  lançadas pelo mecanismo real da Steam, então um atalho registrado é o
-  único jeito confiável de ganhar foco automaticamente.
-
-## Estrutura do repositório
-
-```
-moon_profile/
-├── moon_profile_decky/       # plugin Decky Loader (roda no Steam Deck)
-│   ├── main.py                 # backend Python, exposto via callable()
-│   ├── py_modules/              moonprofile_core.py - lógica compartilhada
-│   │                             com runner.py (Apollo, contexto, comandos
-│   │                             de tela)
-│   ├── runner/runner.py        # executado pelos atalhos non-Steam
-│   ├── src/                    # frontend React/TypeScript (Quick Access,
-│   │                             editor de perfis, configurações)
-│   └── defaults/profiles.json  # perfis de exemplo no primeiro uso
-└── moon_profile_runner/       # daemon Tauri/Rust (roda no host)
-    ├── src-tauri/src/
-    │   ├── session.rs           # ciclo de vida da sessão + watchdog
-    │   ├── apollo.rs            # cliente HTTP mínimo pro Apollo
-    │   ├── displays.rs          # parsing do kscreen-doctor -j
-    │   ├── games.rs             # parsing do catálogo Steam do host
-    │   └── server.rs            # servidor HTTP (axum), porta 47991
-    ├── install.sh                # build release + autostart local
-    └── packaging/PKGBUILD        # empacotamento AUR (pendente de publicar)
-```
-
-## Desenvolvimento
-
-Convenções de código, teste e arquitetura para quem for mexer no projeto
-estão em [`AGENTS.md`](AGENTS.md). Documento de produto completo (fases,
-decisões técnicas, riscos conhecidos) em
-[`moon_profile_decky/docs/prd.md`](moon_profile_decky/docs/prd.md).
 
 ## Licença
 
