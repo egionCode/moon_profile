@@ -1,4 +1,5 @@
 mod apollo;
+mod displays;
 mod games;
 mod server;
 mod session;

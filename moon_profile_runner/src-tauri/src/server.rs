@@ -13,6 +13,7 @@ use axum::{extract::Extension, routing::get, routing::post, Json, Router};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tokio::sync::mpsc;
 
+use crate::displays::{list_displays, HostDisplay};
 use crate::games::{list_host_games, HostGame};
 use crate::session::{close_session_now, register_session, ApolloBaseUrl, SessionState};
 
@@ -89,9 +90,17 @@ async fn games(Extension(notify): Extension<EventNotifier>) -> Json<Vec<HostGame
     Json(list_host_games().await)
 }
 
+// GET /displays - lista os monitores/outputs do host (via kscreen-doctor)
+// pra UI do Deck popular um select em vez do usuario digitar o nome do
+// output na mao (ver moon_profile_decky/src/ProfileEditor.tsx).
+async fn displays() -> Json<Vec<HostDisplay>> {
+    Json(list_displays())
+}
+
 pub fn app(notify: EventNotifier, session_state: SessionState, apollo_base_url: ApolloBaseUrl) -> Router {
     Router::new()
         .route("/games", get(games))
+        .route("/displays", get(displays))
         .route("/session/register", post(register_session))
         .route("/session/close", post(close_session_now))
         .layer(Extension(notify))
@@ -199,6 +208,28 @@ mod tests {
             .await
             .unwrap();
         let _games: Vec<crate::games::HostGame> = serde_json::from_slice(&bytes).unwrap();
+    }
+
+    // So confirma que a rota esta' registrada e devolve um JSON valido - a
+    // logica de parsing do kscreen-doctor -j ja' e' coberta a fundo em
+    // displays.rs (fixtures reais, JSON malformado, etc).
+    #[tokio::test]
+    async fn displays_route_returns_a_json_array() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/displays")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let _displays: Vec<crate::displays::HostDisplay> = serde_json::from_slice(&bytes).unwrap();
     }
 
     // "quando receber uma chamada de sincronia" - o handler manda um evento
