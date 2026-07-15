@@ -1,300 +1,402 @@
 # MoonProfile
 
-Plugin Decky Loader para Steam Deck que gerencia perfis de streaming Moonlight com detecção automática de contexto (docked vs handheld) e configuração dinâmica do host Apollo via API REST.
+Decky Loader plugin for Steam Deck that manages Moonlight streaming
+profiles with automatic context detection (docked vs handheld) and
+dynamic configuration of the Apollo host via REST API.
 
-## Motivação
+## Motivation
 
-Fluxo atual de streaming via Moonlight sofre de:
+The current Moonlight streaming flow suffers from:
 
-- Moonlight não conhece contexto de uso (docked/handheld), dispara resoluções erradas (ex: 800p ao invés de 4K quando dockado)
-- Apollo prep-cmd fixo não se adapta a diferentes cenários (HDR TV vs SDR handheld)
-- MoonDeck resolve parte do problema, mas exige daemon extra no host (Buddy) e não tem perfis contextuais
-- Configurar manualmente a cada sessão (bitrate, codec, HDR, output alvo) é insustentável
+- Moonlight doesn't know the usage context (docked/handheld), triggers
+  wrong resolutions (e.g. 800p instead of 4K when docked)
+- Apollo's fixed prep-cmd doesn't adapt to different scenarios (HDR TV
+  vs SDR handheld)
+- MoonDeck solves part of the problem, but requires an extra daemon on
+  the host (Buddy) and has no contextual profiles
+- Manually configuring every session (bitrate, codec, HDR, target
+  output) doesn't scale
 
-O plugin centraliza as decisões que hoje estão espalhadas entre Moonlight, Apollo, KDE, Steam e o usuário.
+The plugin centralizes the decisions that today are scattered across
+Moonlight, Apollo, KDE, Steam, and the user.
 
-## Diferencial em relação ao MoonDeck
+## Difference from MoonDeck
 
-- ~~Zero componente adicional no host~~ - válido até a Fase 5: detecção de fim de sessão via `current_app` do Apollo não funciona de verdade (auto-detach entra em modo `placebo`, ver Fase 5), então abrimos mão desse diferencial deliberadamente em troca de robustez real (MoonProfile Runner, daemon Tauri/Rust no host). Continua sem certificado/pareamento TLS tipo MoonDeck Buddy - só um token simples.
-- Perfis de streaming editáveis in-place no Deck
-- Detecção automática de contexto (docked/handheld)
-- Cada perfil controla simultaneamente configuração de cliente Moonlight e configuração de displays no host
+- ~~Zero additional component on the host~~ - valid until Phase 5:
+  detecting the end of a session via Apollo's `current_app` doesn't
+  actually work (auto-detach enters "placebo" mode, see Phase 5), so we
+  deliberately gave up that differentiator in exchange for real
+  robustness (MoonProfile Runner, a Tauri/Rust daemon on the host). Still
+  without MoonDeck Buddy-style certificate/TLS pairing, just a simple
+  token.
+- Streaming profiles editable in-place on the Deck
+- Automatic context detection (docked/handheld)
+- Each profile simultaneously controls Moonlight client configuration
+  and host display configuration
 
 ## Stack
 
 - **Frontend**: TypeScript, React, `@decky/ui`, `@decky/api`
-- **Backend**: Python 3.11+ (embutido no Decky Loader)
+- **Backend**: Python 3.11+ (embedded in Decky Loader)
 - **Bundler**: Rollup
-- **Host requirements**: Apollo 0.4.8+, KDE Plasma 6 Wayland, GPU AMD RDNA 4 ou compatível (via VAAPI)
-- **Cliente**: Moonlight Flatpak (`com.moonlight_stream.Moonlight`)
+- **Host requirements**: Apollo 0.4.8+, KDE Plasma 6 Wayland, AMD RDNA 4
+  GPU or equivalent (via VAAPI)
+- **Client**: Moonlight Flatpak (`com.moonlight_stream.Moonlight`)
 
-## Arquitetura
+## Architecture
 
 ```
-[Deck: biblioteca do Steam]
+[Deck: Steam library]
     ↓
-[Quick Access ou botão na tela do jogo]
+[Quick Access or button on the game screen]
     ↓
-[Backend Python do plugin]
-    ├─→ Detecta contexto (docked/handheld) via /sys/class/drm
-    ├─→ Seleciona perfil correspondente
-    ├─→ POST na API do Apollo: atualiza app "SteamGame" com prep-cmd + cmd
-    └─→ subprocess: Moonlight CLI com args do perfil
+[Plugin's Python backend]
+    ├─→ Detects context (docked/handheld) via /sys/class/drm
+    ├─→ Selects the matching profile
+    ├─→ POST to Apollo's API: updates the "SteamGame" app with prep-cmd + cmd
+    └─→ subprocess: Moonlight CLI with the profile's args
          ↓
-[Apollo executa prep-cmd DO com args do perfil]
-    ├─→ Ativa output alvo (HDMI-A-1, DP-3, etc)
-    ├─→ Configura resolução e refresh rate
-    ├─→ Ativa HDR e WCG se aplicável
-    ├─→ Desabilita outros outputs
-    └─→ Executa steam://rungameid/APPID
+[Apollo runs the prep-cmd DO with the profile's args]
+    ├─→ Activates the target output (HDMI-A-1, DP-3, etc)
+    ├─→ Sets resolution and refresh rate
+    ├─→ Enables HDR and WCG if applicable
+    ├─→ Disables other outputs
+    └─→ Runs steam://rungameid/APPID
          ↓
-    [Stream rodando]
+    [Stream running]
          ↓
-[Ao fechar Moonlight ou perder conexão]
+[On closing Moonlight or losing connection]
     ↓
-[Apollo executa prep-cmd UNDO]
-    ├─→ pkill do processo do jogo pelo AppID
-    ├─→ Restaura outputs originais
-    └─→ Desativa output virtual
+[Apollo runs the prep-cmd UNDO]
+    ├─→ pkill the game process by AppID
+    ├─→ Restores original outputs
+    └─→ Disables the virtual output
 ```
 
-## Modelo de dados
+## Data model
 
-### Perfil
+### Profile
 
 ```typescript
 interface Profile {
-    id: string;                    // ex: "docked-tv-4k-hdr"
-    name: string;                  // ex: "Docked TV 4K HDR"
+    id: string;                    // e.g. "docked-tv-4k-hdr"
+    name: string;                  // e.g. "Docked TV 4K HDR"
     trigger: "docked" | "handheld" | "manual";
     moonlight: MoonlightConfig;
     host: HostConfig;
 }
 
 interface MoonlightConfig {
-    resolution: string;            // ex: "3840x2160"
-    fps: number;                   // ex: 60
-    bitrate: number;               // em kbps, ex: 150000
+    resolution: string;            // e.g. "3840x2160"
+    fps: number;                   // e.g. 60
+    bitrate: number;                // in kbps, e.g. 150000
     codec: "HEVC" | "AV1" | "H264";
     hdr: boolean;
 }
 
 interface HostConfig {
-    target_output: string;         // ex: "HDMI-A-1"
-    resolution: string;            // ex: "3840x2160"
-    fps: number;                   // ex: 60
+    target_output: string;         // e.g. "HDMI-A-1"
+    resolution: string;            // e.g. "3840x2160"
+    fps: number;                   // e.g. 60
     hdr: boolean;
     wcg: boolean;                  // Wide Color Gamut
-    disable_outputs: string[];     // ex: ["DP-3"]
+    disable_outputs: string[];     // e.g. ["DP-3"]
 }
 ```
 
-### Config global
+### Global config
 
 ```typescript
 interface Config {
-    host: string;                  // ex: "192.168.1.6"
-    username: string;              // credencial admin do Apollo
-    password: string;              // credencial admin do Apollo
+    host: string;                  // e.g. "192.168.1.6"
+    username: string;              // Apollo admin credential
+    password: string;              // Apollo admin credential
 }
 ```
 
-Persistência:
+Persistence:
 - `$DECKY_PLUGIN_SETTINGS_DIR/profiles.json`
-- `$DECKY_PLUGIN_SETTINGS_DIR/config.json` (permissões 0600)
+- `$DECKY_PLUGIN_SETTINGS_DIR/config.json` (0600 permissions)
 
-## Estrutura do repositório
+## Repository structure
 
 ```
 moonprofile/
-├── plugin.json                   # metadata Decky
-├── package.json                  # deps frontend
+├── plugin.json                   # Decky metadata
+├── package.json                  # frontend deps
 ├── rollup.config.js              # bundler
 ├── tsconfig.json
-├── main.py                       # backend Python
+├── main.py                       # Python backend
 ├── src/
-│   ├── index.tsx                 # entry point + registro de patches
-│   ├── types.ts                  # interfaces compartilhadas
-│   ├── api.ts                    # bindings callable() do backend
-│   ├── QuickAccessContent.tsx    # UI principal
-│   ├── ProfileEditor.tsx         # editor CRUD de perfis
-│   └── ConfigEditor.tsx          # config global (host, credenciais)
-├── defaults/                     # arquivos default do primeiro run
-│   └── profiles.json             # perfis de exemplo
-└── PROJECT.md                    # este arquivo
+│   ├── index.tsx                 # entry point + patch registration
+│   ├── types.ts                  # shared interfaces
+│   ├── api.ts                    # callable() bindings to the backend
+│   ├── QuickAccessContent.tsx    # main UI
+│   ├── ProfileEditor.tsx         # profile CRUD editor
+│   └── ConfigEditor.tsx          # global config (host, credentials)
+├── defaults/                     # first-run default files
+│   └── profiles.json             # example profiles
+└── PROJECT.md                    # this file
 ```
 
-## Fases de execução
+## Execution phases
 
-### Fase 0: Prova de conceito CLI (target: 1h)
+### Phase 0: CLI proof of concept (target: 1h)
 
-Valida a arquitetura sem escrever plugin.
+Validates the architecture without writing a plugin.
 
-Objetivos:
-- Via curl, atualizar app "SteamGame" no Apollo com prep-cmd customizado
-- Via Moonlight CLI, conectar na app atualizada
-- Confirmar que HDR, resolução e AppID dinâmico funcionam ponta a ponta
+Goals:
+- Via curl, update the "SteamGame" app on Apollo with a custom prep-cmd
+- Via the Moonlight CLI, connect to the updated app
+- Confirm that HDR, resolution, and dynamic AppID work end to end
 
-Entregável: script bash de referência que reproduz o fluxo completo.
+Deliverable: reference bash script that reproduces the complete flow.
 
-Critério de sucesso: consegue lançar RE4 com HDR ativo via linha de comando, atualizar pra outro AppID sem reiniciar Apollo.
+Success criteria: can launch RE4 with HDR on via command line, switch to
+a different AppID without restarting Apollo.
 
-### Fase 1: Backend Python + Quick Access mínimo (target: 3h)
+### Phase 1: Python backend + minimal Quick Access (target: 3h)
 
-Plugin funcional com config e um perfil hardcoded.
+Functional plugin with config and one hardcoded profile.
 
-Objetivos:
-- Clone do template Decky
-- `main.py` completo com métodos: `get_config`, `save_config`, `get_profiles`, `save_profiles`, `detect_context`, `stream_game`
-- UI Quick Access com: config global editável + lista de perfis + botão "Stream currently selected game"
-- Pega AppID do jogo em foco via `SteamClient.Router.MainRunningApp` ou similar
-- Perfis hardcoded no `defaults/profiles.json`
+Goals:
+- Clone of the Decky template
+- Complete `main.py` with methods: `get_config`, `save_config`,
+  `get_profiles`, `save_profiles`, `detect_context`, `stream_game`
+- Quick Access UI with: editable global config + profile list + "Stream
+  currently selected game" button
+- Get the AppID of the focused game via
+  `SteamClient.Router.MainRunningApp` or similar
+- Hardcoded profiles in `defaults/profiles.json`
 
-Entregável: plugin instalável no Deck que substitui MoonDeck no fluxo docked/handheld.
+Deliverable: installable plugin on the Deck that replaces MoonDeck in
+the docked/handheld flow.
 
-Critério de sucesso: seleciona jogo na biblioteca, abre Quick Access, clica "Stream", contexto detectado corretamente, jogo lança no host com perfil aplicado.
+Success criteria: select a game in the library, open Quick Access, click
+"Stream", context correctly detected, game launches on the host with the
+profile applied.
 
-### Fase 2: UI de perfis (target: 3h)
+### Phase 2: Profile UI (target: 3h)
 
-Editor CRUD de perfis dentro do Quick Access.
+CRUD profile editor inside Quick Access.
 
-Objetivos:
-- Criar, editar, duplicar, deletar perfis
-- Todos os campos editáveis via TextField, DropdownItem, SliderField, ToggleField
-- Validação básica (nome único, resolução no formato correto)
-- Feedback visual (toaster.toast) em cada operação
+Goals:
+- Create, edit, duplicate, delete profiles
+- All fields editable via TextField, DropdownItem, SliderField,
+  ToggleField
+- Basic validation (unique name, resolution in the correct format)
+- Visual feedback (toaster.toast) on every operation
 
-Entregável: gerenciamento completo de perfis sem editar JSON manualmente.
+Deliverable: complete profile management without manually editing JSON.
 
-Critério de sucesso: cria um perfil novo do zero, salva, aplica em um stream, sem tocar em arquivo.
+Success criteria: create a new profile from scratch, save it, apply it
+in a stream, without touching a file.
 
-### Fase 3: Botão na tela do jogo (target: 2-6h, imprevisível)
+### Phase 3: Button on the game screen (target: 2-6h, unpredictable)
 
-Injeção via patch React na página de detalhes do jogo.
+Injection via a React patch on the game details page.
 
-Objetivos:
+Goals:
 - `routerHook.addPatch("/library/app/:appid", ...)`
-- `afterPatch` e `findInReactTree` pra localizar o container de ações
-- Injeta `StreamButton` que chama `streamGame(appId, gameName)`
-- Dropdown pra escolher perfil manualmente (opcional)
+- `afterPatch` and `findInReactTree` to locate the actions container
+- Injects a `StreamButton` that calls `streamGame(appId, gameName)`
+- Dropdown to manually choose a profile (optional)
 
-Entregável: botão "Stream via Moonlight" aparece na tela de cada jogo, ao lado dos botões padrão.
+Deliverable: "Stream via Moonlight" button appears on each game's
+screen, next to the standard buttons.
 
-Critério de sucesso: clica direto no botão sem passar por Quick Access, stream inicia.
+Success criteria: click the button directly without going through Quick
+Access, stream starts.
 
-Risco: parte mais frágil, quebra entre versões do Steam client. Estudar código atual do MoonDeck é obrigatório.
+Risk: the most fragile part, breaks between Steam client versions.
+Studying MoonDeck's current code is mandatory.
 
-### Fase 4: Polish
+### Phase 4: Polish
 
-Objetivos (sem ordem específica, escolher conforme uso real):
-- ~~Notificações persistentes durante stream ativo / detecção de fim de sessão~~ - movido pra Fase 5 (precisa do daemon no host, ver abaixo). A ideia original de pollar `current_app` do Apollo **não funciona** - motivo documentado na Fase 5.
-- ✅ Tratamento de erro (host offline, credenciais erradas, Apollo não respondendo) - `main.py:_apollo_error_response`, diferencia os 3 casos (confirmado 401 = credencial errada lendo `confighttp.cpp` do Apollo).
-- ✅ Ícone customizado no menu do Decky (`FaSatelliteDish`, já feito)
-- ✅ Logs internos acessíveis pela UI - aba "Logs" na sidenav de Configurações, lê `decky.DECKY_PLUGIN_LOG` sob demanda.
-- ❌ Descartado: detecção de OLED vs LCD do Deck - sem caso de uso concreto que justifique (só mudaria defaults de FPS/HDR no perfil handheld; usuário já configura isso manualmente sem problema).
-- ❌ Descartado por agora: suporte a múltiplos hosts - usuário só usa um host Apollo hoje, sem necessidade real. Reconsiderar se isso mudar.
+Goals (no particular order, pick based on real usage):
+- ~~Persistent notifications during an active stream / end-of-session
+  detection~~ - moved to Phase 5 (needs the host daemon, see below). The
+  original idea of polling Apollo's `current_app` **doesn't work**,
+  reason documented in Phase 5.
+- ✅ Error handling (host offline, wrong credentials, Apollo not
+  responding) - `main.py:_apollo_error_response`, distinguishes the 3
+  cases (confirmed 401 = wrong credential by reading Apollo's
+  `confighttp.cpp`).
+- ✅ Custom icon in the Decky menu (`FaSatelliteDish`, already done)
+- ✅ Internal logs accessible from the UI - "Logs" tab in the Settings
+  sidenav, reads `decky.DECKY_PLUGIN_LOG` on demand.
+- ❌ Dropped: detecting OLED vs LCD Deck models, no concrete use case
+  that justifies it (would only change FPS/HDR defaults in the handheld
+  profile; the user already configures this manually without issue).
+- ❌ Dropped for now: multi-host support, the user only uses one Apollo
+  host today, no real need for it. Reconsider if that changes.
 
-Fase 4 encerrada com o que fazia sentido implementar agora.
+Phase 4 closed with what made sense to implement now.
 
-### Fase 5: MoonProfile Runner (daemon no host, Tauri/Rust)
+### Phase 5: MoonProfile Runner (host daemon, Tauri/Rust)
 
-Mudança de arquitetura deliberada - abre mão do diferencial "zero componente adicional" (Motivação/Diferencial, no topo deste documento) em troca de robustez real. Como não é um plugin Decky, não tem nenhuma das restrições da Decky Plugin Store (inclusive a de "maioria do código não pode ter sido escrita por IA" - checkbox obrigatório no PR template do `decky-plugin-database`) - por isso a stack é livre, escolhida sem essa amarra: **Tauri v2 (Rust)**, com tray icon + janela sob demanda.
+Deliberate architecture change, gives up the "zero additional component"
+differentiator (see Motivation/Difference at the top of this document)
+in exchange for real robustness. Since it isn't a Decky plugin, it has
+none of the Decky Plugin Store's restrictions (including the "most of
+the code can't have been written by AI" one, a mandatory checkbox on the
+`decky-plugin-database` PR template), so the stack is free, chosen
+without that constraint: **Tauri v2 (Rust)**, with a tray icon + on-demand
+window.
 
-Fase única (absorveu a antiga "Fase 4.5" - eram itens separados só por não depender tecnicamente um do outro, mas fazem parte do mesmo esforço de amadurecer o lado host/game-management do projeto).
+Single phase (absorbed the old "Phase 4.5", these were separate items
+only because they weren't technically dependent on each other, but
+they're part of the same effort to mature the host/game-management side
+of the project).
 
-**Por que o daemon passou a ser necessário** (achado técnico, não repetir a investigação): tentamos resolver detecção de fim de sessão via *polling* de `GET /api/apps` (campo `current_app`), a solução que a Fase 4 original previa. Não funciona. Lendo o código do Apollo (`ClassicOldSong/Apollo`, `src/process.cpp`, função `proc_t::running()`):
+**Why the daemon became necessary** (a technical finding, not repeating
+the investigation): we tried solving end-of-session detection via
+*polling* `GET /api/apps` (the `current_app` field), the solution the
+original Phase 4 anticipated. It doesn't work. Reading Apollo's code
+(`ClassicOldSong/Apollo`, `src/process.cpp`, function `proc_t::running()`):
 
 ```cpp
 } else if (_app.auto_detach && std::chrono::steady_clock::now() - _app_launch_time < 5s) {
   // "App exited within 5 seconds of launch. Treating the app as a detached command."
   placebo = true;
-  return _app_id;  // dai em diante, "rodando" pra sempre
+  return _app_id;  // "running" forever from here on
 }
 ```
 
-Nosso `stream_game()` usa `"auto-detach": true` justamente porque `cmd: "steam steam://rungameid/{app_id}"` retorna quase na hora (é só um relay pro client Steam - o jogo real roda solto, desprendido). Isso é exatamente o gatilho do `placebo = true`: uma vez nesse modo, `running()` **nunca mais volta a zero sozinho**, então `current_app` fica preso "rodando" até alguém chamar `close_app` manualmente (nosso "Fechar conexão"). Não tem workaround de polling que resolva isso - o dado que estaríamos lendo simplesmente não reflete a realidade.
+Our `stream_game()` uses `"auto-detach": true` precisely because
+`cmd: "steam steam://rungameid/{app_id}"` returns almost immediately
+(it's just a relay to the Steam client, the actual game runs
+separately, detached). That's exactly the `placebo = true` trigger: once
+in that mode, `running()` **never goes back to zero on its own**, so
+`current_app` stays stuck "running" until someone calls `close_app`
+manually (our "Close connection"). There's no polling workaround for
+this, the data we'd be reading simply doesn't reflect reality.
 
-**Primeira fatia - ✅ implementada e validada no device (detecção de fim de sessão):**
-- `moon_profile_runner/` (projeto Tauri v2 completo, monorepo irmão de `moon_profile_decky/`): tray icon (`TrayIconBuilder`) + janela sob demanda (`tauri.conf.json` com `windows: []`, janela criada ao clicar no tray).
-- Servidor HTTP embutido (`axum`, numa thread + runtime `tokio` própria, separada do event loop do Tauri) na porta `47991`. Sem autenticação - servidor aberto na rede local (decisão explícita: numa LAN doméstica já confiável, o atrito de token não compensa o ganho).
-- **Mudança de arquitetura posterior, maior que a detecção original:** o Apollo deixou de ter prep-cmd nenhum (nem "do" nem "undo") - o Runner (Rust) passou a controlar 100% da tela do host (`kscreen-doctor`) e o ciclo de vida da sessão, tanto no lançamento (`POST /session/register`, roda os comandos de ligar a tela de forma síncrona antes de responder) quanto no fechamento (`POST /session/close` manual, ou autônomo via um watchdog em background que detecta sozinho quando o jogo fechou via `sysinfo`). Ver `session.rs`/`apollo.rs`/`displays.rs` e a regra "Runner controla tudo que mexe no host" em `AGENTS.md`. Isso tornou o Runner **obrigatório** (deixou de ser opcional) e eliminou o polling client-side que existia antes em `stream.ts` (arquivo removido - ver Estágio C).
-- Testes automatizados (`cargo test`) - já pegaram bugs reais rodando contra o SO/kscreen-doctor de verdade: `refresh_processes()` sem `cmd()` populado, match por substring colidindo com prefixo numérico compartilhado, e uma corrida de inicialização (watchdog fechando um jogo que ainda estava só carregando, corrigida com o campo `confirmed_running`).
-- Nova aba "Runner" na sidenav de Configurações (`RunnerConfigSection.tsx`) - só a porta é configurável, o host é o mesmo da aba "Config do Apollo" (Runner e Apollo sempre rodam na mesma máquina).
-- Autostart via `~/.config/autostart/*.desktop` (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`) - não systemd, o app precisa de sessão gráfica ativa pra mostrar o tray. Também empacotado pra AUR (`packaging/PKGBUILD`, pacote `-git`).
+**First slice - ✅ implemented and validated on-device (end-of-session detection):**
+- `moon_profile_runner/` (a complete Tauri v2 project, sibling monorepo
+  to `moon_profile_decky/`): tray icon (`TrayIconBuilder`) + on-demand
+  window (`tauri.conf.json` with `windows: []`, window created on tray
+  click).
+- Embedded HTTP server (`axum`, on its own thread + `tokio` runtime,
+  separate from Tauri's event loop) on port `47991`. No authentication,
+  server open on the local network (deliberate decision: on an
+  already-trusted home LAN, the friction of a token isn't worth the
+  security gain).
+- **Later architecture change, bigger than the original detection
+  feature:** Apollo stopped having any prep-cmd at all (neither "do" nor
+  "undo"), the Runner (Rust) took over 100% control of the host display
+  (`kscreen-doctor`) and the session lifecycle, both at launch
+  (`POST /session/register`, runs the display-on commands synchronously
+  before responding) and at close (`POST /session/close` manual, or
+  autonomous via a background watchdog that detects on its own when the
+  game closed, via `sysinfo`). See `session.rs`/`apollo.rs`/`displays.rs`
+  and the "Runner controls everything that touches the host" rule in
+  `AGENTS.md`. This made the Runner **mandatory** (no longer optional)
+  and eliminated the client-side polling that used to exist in
+  `stream.ts` (file removed, see Stage C).
+- Automated tests (`cargo test`), already caught real bugs running
+  against the real OS/kscreen-doctor: `refresh_processes()` without
+  `cmd()` populated, a substring match colliding with a shared numeric
+  prefix, and an initialization race (watchdog closing a game that was
+  still just loading, fixed with the `confirmed_running` field).
+- New "Runner" tab in the Settings sidenav (`RunnerConfigSection.tsx`),
+  only the port is configurable, the host is the same one from the
+  "Apollo config" tab (Runner and Apollo always run on the same
+  machine).
+- Autostart via `~/.config/autostart/*.desktop`
+  (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`),
+  not systemd, the app needs an active graphical session to show the
+  tray. Also packaged for the AUR (`packaging/PKGBUILD`, `-git` package).
 
-### Atalhos por jogo gerados a partir do Runner (substituiu o botão da tela do jogo)
+### Per-game shortcuts generated from the Runner (replaced the game-screen button)
 
-Em vez de um botão injetado via patch React (frágil, só funcionava pra
-jogos que já eram catálogo Steam real), o Runner lê os jogos do host e o
-Deck cria um atalho visível por jogo (com capa/hero) - o usuário clica
-"Jogar" nativo, sem precisar de botão nenhum.
+Instead of a button injected via a React patch (fragile, only worked for
+games that were already real Steam catalog entries), the Runner reads
+the games on the host and the Deck creates a visible shortcut per game
+(with cover/hero art), the user clicks "Play" natively, no button
+needed.
 
-**Achado importante do planejamento:** o atalho, ao virar item normal da
-biblioteca, pode ser clicado sem nenhum JS nosso rodando antes - por isso
-`runner.py` deixou de ser um lançador burro e passou a se auto-configurar
-(ler config/perfis do disco, detectar contexto, falar com o Apollo) antes
-de dar exec no Moonlight.
+**Important finding from planning:** the shortcut, once it becomes a
+normal library item, can be clicked without any of our JS running
+beforehand, that's why `runner.py` stopped being a dumb launcher and now
+self-configures (reads config/profiles from disk, detects context, talks
+to Apollo) before exec'ing Moonlight.
 
-**Estágio A - ✅ implementado e validado no device (jogos Steam reais):**
+**Stage A - ✅ implemented and validated on-device (real Steam games):**
 - `py_modules/moonprofile_core.py`: `ApolloClient`, `detect_context`,
-  `build_display_commands`/`build_restore_commands`, `classify_apollo_error`
-  - extraído de `main.py` pra ser importável também por `runner.py` (que
-  roda fora do Decky Loader, sem `py_modules` no `sys.path`
-  automaticamente - `runner.py` insere isso na mão).
-- `moon_profile_runner/src-tauri/src/games.rs`: parsing de
-  `libraryfolders.vdf` + `appmanifest_*.acf`, endpoint `GET /games`. Filtra
-  ferramentas da Valve por nome E software real (Aseprite, Blender etc)
-  via categorias de gameplay da API pública da Steam (achado: o campo
-  `type` da Steam não distingue jogo de ferramenta - `categories` sim).
-- `gameShortcuts.ts`: atalho **visível** (sem esconder), launch options
-  fixas (`MOONPROFILE_HOST_APP_ID=<id>`) setadas uma vez na criação.
-- `gameArtwork.ts`: `SteamClient.Apps.SetCustomArtworkForApp` com capa/hero
-  da CDN oficial da Steam (só pra AppIDs Steam reais).
-- `gameSync.ts` + botão "Sincronizar jogos do host" no Quick Access, com
-  barra de progresso real (jogo a jogo) - sincronização manual por
-  enquanto.
-- `gameCollection.ts`: agrupa os atalhos sincronizados numa coleção
-  "Streaming" (`window.collectionStore`, id persistido pra sobreviver a
-  renomeação manual).
+  `build_display_commands`/`build_restore_commands`, `classify_apollo_error`,
+  extracted from `main.py` so it can also be imported by `runner.py`
+  (which runs outside Decky Loader, without `py_modules` automatically
+  on `sys.path`, `runner.py` inserts it manually).
+- `moon_profile_runner/src-tauri/src/games.rs`: parsing of
+  `libraryfolders.vdf` + `appmanifest_*.acf`, `GET /games` endpoint.
+  Filters out Valve tools by name AND real software (Aseprite, Blender,
+  etc) via the Steam public API's gameplay categories (finding: Steam's
+  `type` field doesn't distinguish game from tool, `categories` does).
+- `gameShortcuts.ts`: **visible** shortcut (not hidden), fixed launch
+  options (`MOONPROFILE_HOST_APP_ID=<id>`) set once at creation.
+- `gameArtwork.ts`: `SteamClient.Apps.SetCustomArtworkForApp` with
+  cover/hero art from the official Steam CDN (only for real Steam
+  AppIDs).
+- `gameSync.ts` + a "Sync games from host" button in Quick Access, with
+  a real progress bar (game by game), manual sync for now.
+- `gameCollection.ts`: groups the synced shortcuts into a "Streaming"
+  collection (`window.collectionStore`, persisted id to survive manual
+  renaming).
 
-**Estágio B (a fazer): jogos non-Steam.** Parsing do `shortcuts.vdf`
-(binário) do host, novo campo `steamgriddb_api_key` na config, artwork via
-SteamGridDB (`search_game` pelo nome) em vez da CDN oficial.
+**Stage B (to do): non-Steam games.** Parsing of the host's (binary)
+`shortcuts.vdf`, new `steamgriddb_api_key` config field, artwork via
+SteamGridDB (`search_game` by name) instead of the official CDN.
 
-**Estágio C - ✅ concluído: botão antigo removido.** Deletados
+**Stage C - ✅ done: old button removed.** Deleted
 `LibraryAppPatch.tsx`, `GameActionButton.tsx`, `stream.ts`,
-`steamShortcut.ts`, `ButtonPositionSection.tsx` (aba "Posição do botão" -
-só fazia sentido pro botão que não existe mais), e o registro de
-`patchLibraryApp()` em `index.tsx`. `main.py:stream_game()` e o campo
-`button_position`/`ButtonPosition` (config e tipo) também saíram, órfãos
-depois da remoção. `main.py:stop_stream()` continua existindo (usado pelo
-"Fechar conexão" do Quick Access, que fala com o Runner, não é o mesmo
-mecanismo do botão antigo).
+`steamShortcut.ts`, `ButtonPositionSection.tsx` (the "Button position"
+tab, only made sense for the button that no longer exists), and the
+`patchLibraryApp()` registration in `index.tsx`. `main.py:stream_game()`
+and the `button_position`/`ButtonPosition` field/type (config and type)
+also went away, orphaned after the removal. `main.py:stop_stream()`
+still exists (used by Quick Access's "Close connection", which talks to
+the Runner, not the same mechanism as the old button).
 
-**Fora de escopo (não decidido se vale a pena ainda):**
-- Lista de clients conectados / status de estabilidade de conexão na janela do Runner.
-- Checagem de prontidão do host antes de iniciar o stream (GPU/encoder, sessão Plasma ativa).
-- Pareamento com certificado/TLS, se algum dia fizer falta de verdade (o que o MoonDeck Buddy faz - bem mais complexo, decisão consciente de não fazer isso agora).
+**Out of scope (not yet decided if it's worth it):**
+- List of connected clients / connection stability status in the
+  Runner's window.
+- Host readiness check before starting a stream (GPU/encoder, active
+  Plasma session).
+- Certificate/TLS pairing, if it's ever genuinely needed (what MoonDeck
+  Buddy does, much more complex, a conscious decision not to do this
+  now).
 
-Decisão explícita (registrada pra não repetir a discussão depois): **não forkar o MoonDeck nem o Buddy.** A arquitetura deles pressupõe os dois itens que este projeto existia pra evitar (daemon extra no host, ausência de perfis contextuais - ver Motivação) - só que a Fase 5 já abriu mão do primeiro item, deliberadamente. Ainda assim, forkar herdaria uma arquitetura C++/Qt desconhecida e perfis não-contextuais - mais trabalho, não menos. A estratégia continua sendo: ler o código deles como referência pontual (como já feito pro botão da tela do jogo, pro fix do `gameid`, e pra API de tray/menu do Tauri), implementar direto no stack já validado.
+Explicit decision (recorded so as not to repeat the discussion later):
+**not forking MoonDeck or Buddy.** Their architecture assumes the two
+things this project existed to avoid (an extra daemon on the host,
+absence of contextual profiles, see Motivation), except Phase 5 already
+gave up the first item, deliberately. Even so, forking would inherit an
+unfamiliar C++/Qt architecture and non-contextual profiles, more work,
+not less. The strategy remains: read their code as a point-in-time
+reference (as already done for the game-screen button, the `gameid`
+fix, and the Tauri tray/menu API), implement directly on the
+already-validated stack.
 
-## Referências técnicas
+## Technical references
 
-### API do Apollo (herdada do Sunshine)
+### Apollo API (inherited from Sunshine)
 
 Endpoint: `https://HOST:47990/api/apps`
 
-Autenticação: Basic auth (admin/senha configurados no Apollo).
+Authentication: Basic auth (admin/password configured on Apollo).
 
-Certificado auto-assinado, cliente precisa desabilitar verificação SSL.
+Self-signed certificate, client needs to disable SSL verification.
 
-Non-browser clients são isentos de CSRF (confirmado na doc oficial).
+Non-browser clients are exempt from CSRF (confirmed in the official
+docs).
 
-Métodos usados:
-- `GET /api/apps` → lista apps atuais
-- `POST /api/apps` → cria ou atualiza (usar `index: -1` pra criar, ou índice existente pra atualizar)
+Methods used:
+- `GET /api/apps` → lists current apps
+- `POST /api/apps` → creates or updates (use `index: -1` to create, or
+  an existing index to update)
 
-Corpo do POST:
+POST body:
 
 ```json
 {
@@ -307,29 +409,32 @@ Corpo do POST:
   "exclude-global-prep-cmd": false,
   "elevated": false,
   "prep-cmd": [{
-    "do": "bash -c '...comando inline...'",
-    "undo": "bash -c '...comando inline...'"
+    "do": "bash -c '...inline command...'",
+    "undo": "bash -c '...inline command...'"
   }],
   "output": "/tmp/apollo-steamgame-2050650.log"
 }
 ```
 
-Limitação conhecida: campo `env` só é editável via arquivo `apps.json` direto, não via API. Por isso passamos tudo via `prep-cmd` inline.
+Known limitation: the `env` field is only editable via the `apps.json`
+file directly, not via the API. That's why we pass everything through
+inline `prep-cmd`.
 
-### Comando de undo com kill limpo do jogo
+### Undo command with a clean game kill
 
 ```bash
-# gerado dinamicamente pelo plugin, embarcando o AppID conhecido
+# generated dynamically by the plugin, embedding the known AppID
 pkill -TERM -f "AppId=2050650" ; sleep 5 ; pkill -KILL -f "AppId=2050650" 2>/dev/null ; setsid steam steam://close/bigpicture ; sleep 2 ; kscreen-doctor output.DP-3.enable ; sleep 1 ; kscreen-doctor output.HDMI-A-1.disable
 ```
 
-Uso de `;` em vez de `&&` é intencional: se pkill retorna erro (jogo já fechou), a cadeia continua e restaura os displays.
+Using `;` instead of `&&` is intentional: if pkill returns an error (the
+game already closed), the chain continues and restores the displays.
 
-### Detecção de contexto
+### Context detection
 
 ```python
 def detect_context() -> str:
-    """Retorna 'docked' se algum display externo tá conectado, senão 'handheld'."""
+    """Returns 'docked' if any external display is connected, otherwise 'handheld'."""
     drm_path = "/sys/class/drm"
     for entry in os.listdir(drm_path):
         if not entry.startswith("card"):
@@ -346,17 +451,18 @@ def detect_context() -> str:
 
 ### Steam Browser Protocol
 
-Existentes e usados:
-- `steam://rungameid/<appid>` → lança jogo
-- `steam://open/bigpicture` → abre Big Picture
-- `steam://close/bigpicture` → fecha Big Picture
+Existing and used:
+- `steam://rungameid/<appid>` → launches the game
+- `steam://open/bigpicture` → opens Big Picture
+- `steam://close/bigpicture` → closes Big Picture
 
-NÃO existe:
-- `steam://exit/<appid>` → não é URL scheme válido, motivo pelo qual usamos `pkill`
+Does NOT exist:
+- `steam://exit/<appid>` → not a valid URL scheme, why we use `pkill`
+  instead
 
-## Fluxo de desenvolvimento
+## Development workflow
 
-### Setup inicial
+### Initial setup
 
 ```bash
 git clone https://github.com/SteamDeckHomebrew/decky-plugin-template moonprofile
@@ -365,7 +471,7 @@ rm -rf .git && git init
 pnpm install
 ```
 
-Edita `plugin.json` com nome, autor, descrição.
+Edit `plugin.json` with the name, author, description.
 
 ### Build
 
@@ -373,11 +479,11 @@ Edita `plugin.json` com nome, autor, descrição.
 pnpm build
 ```
 
-Gera `dist/index.js` que o Decky Loader carrega.
+Generates `dist/index.js`, which Decky Loader loads.
 
-### Deploy no Deck
+### Deploy to the Deck
 
-Método rsync:
+rsync method:
 ```bash
 rsync -avz --delete \
     ./ deck@STEAMDECK_IP:/home/deck/homebrew/plugins/moonprofile/ \
@@ -386,55 +492,74 @@ rsync -avz --delete \
 ssh deck@STEAMDECK_IP "systemctl --user restart plugin_loader"
 ```
 
-Método VS Code: Remote-SSH direto no Deck, edita in-place, reload pela UI do Decky.
+VS Code method: Remote-SSH directly into the Deck, edit in place, reload
+via the Decky UI.
 
 ### Logs
 
-No Deck:
+On the Deck:
 ```bash
 journalctl --user -f | grep -i decky
 ```
 
-Logs do plugin especificamente:
+Plugin-specific logs:
 ```bash
 tail -f /home/deck/homebrew/logs/moonprofile/plugin.log
 ```
 
-Frontend logs vão pro Steam WebHelper devtools (habilitar via Decky Settings → Developer Options).
+Frontend logs go to the Steam WebHelper devtools (enable via Decky
+Settings → Developer Options).
 
-## Riscos e limitações conhecidas
+## Known risks and limitations
 
-1. **Patch da biblioteca é frágil**: nomes de classe React do Gaming Mode mudam entre versões do Steam client. Manutenção obrigatória. Mitigação: começar sem patch (só Quick Access), adicionar depois se realmente necessário.
+1. **The library patch is fragile**: Gaming Mode's React class names
+   change between Steam client versions. Requires ongoing maintenance.
+   Mitigation: start without the patch (Quick Access only), add it later
+   if truly needed.
 
-2. **Escape de strings no prep-cmd**: se caminho ou nome de perfil tiver aspas simples, quebra. Mitigação: sanitizar inputs no editor.
+2. **String escaping in prep-cmd**: if a path or profile name has single
+   quotes, it breaks. Mitigation: sanitize inputs in the editor.
 
-3. **Sem sincronização de saves além do Steam Cloud**: aceitável pro fluxo pessoal.
+3. **No save sync beyond Steam Cloud**: acceptable for the personal
+   flow.
 
-4. **Sem retomada automática de sessão**: se cair a conexão, reabre manualmente.
+4. **No automatic session resume**: if the connection drops, reopen
+   manually.
 
-5. **`sleep 5` no undo pode não ser suficiente pra jogos com autosave raro**: aceitar perda ou aumentar. Configurável por perfil na Fase 4.
+5. **`sleep 5` in the undo might not be enough for games with rare
+   autosaves**: accept the loss or increase it. Configurable per profile
+   in Phase 4.
 
-6. **Trigger `docked` sozinho não distingue rede boa vs ruim**: se você joga docked em casa e docked na casa de amigo, precisa selecionar perfil manualmente. Ampliar pra trigger composto (docked + SSID) é possível na Fase 4.
+6. **The `docked` trigger alone doesn't distinguish good vs bad
+   network**: if you play docked at home and docked at a friend's place,
+   you need to select the profile manually. Expanding to a composite
+   trigger (docked + SSID) is possible in Phase 4.
 
-7. **Match por `AppId=` no pkill é frágil se dois jogos rodam simultaneamente**: cenário raro.
+7. **Matching by `AppId=` in pkill is fragile if two games run
+   simultaneously**: rare scenario.
 
-## Recursos externos
+## External resources
 
 - Sunshine/Apollo API: https://docs.lizardbyte.dev/projects/sunshine/latest/md_docs_2api.html
 - MoonDeck (case study): https://github.com/FrogTheFrog/moondeck
 - Decky Loader wiki: https://wiki.deckbrew.xyz/en/plugin-dev/getting-started
 - Decky plugin template: https://github.com/SteamDeckHomebrew/decky-plugin-template
-- HLTB plugin (referência de patch simples): https://github.com/OMGDuke/HLTB-For-Deck
+- HLTB plugin (simple patch reference): https://github.com/OMGDuke/HLTB-For-Deck
 
-## Restrições de escopo (importante)
+## Scope restrictions (important)
 
-**Hard stop na Fase 1.** Uso real por 2 semanas antes de decidir Fase 2 ou 3.
+**Hard stop at Phase 1.** Two weeks of real use before deciding on Phase
+2 or 3.
 
-Motivos:
-- Padrão histórico de acumular projetos parciais
-- Prazo do Ares em agosto tem prioridade sobre este projeto
-- Rewrite do Oráculo em andamento não pode desacelerar
-- Fase 1 já resolve o problema pessoal (docked/handheld com perfis)
-- Fase 2 e 3 são polish, não features essenciais
+Reasons:
+- Historical pattern of accumulating partial projects
+- Ares deadline in August has priority over this project
+- Ongoing Oraculo rewrite can't be slowed down
+- Phase 1 already solves the personal problem (docked/handheld with
+  profiles)
+- Phases 2 and 3 are polish, not essential features
 
-Se após 2 semanas de uso real houver dor genuína (não vontade abstrata) por CRUD de perfis ou botão na tela do jogo, aí sim investir mais tempo. Antes disso, é sinal de over-engineering ou procrastinação disfarçada.
+If after two weeks of real use there's genuine pain (not abstract
+desire) for profile CRUD or the game-screen button, then invest more
+time. Before that, it's a sign of over-engineering or disguised
+procrastination.
