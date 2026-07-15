@@ -4,6 +4,7 @@ mod games;
 mod server;
 mod session;
 #[cfg(test)]
+#[path = "tests/support.rs"]
 mod test_support;
 
 use server::{run_server, RunnerEvent};

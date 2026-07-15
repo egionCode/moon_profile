@@ -28,8 +28,19 @@ que um mock não pegaria).
 
 ## moon_profile_runner/ (Tauri/Rust)
 
-- Testes vivem em `#[cfg(test)] mod tests` dentro do próprio arquivo do
-  código testado (ex: `src-tauri/src/server.rs`).
+- Testes ficam fisicamente em `src-tauri/src/tests/<módulo>.rs` (ex:
+  `src/tests/server.rs` testa `src/server.rs`), mas continuam logicamente
+  dentro do módulo testado: cada arquivo de produção só tem uma declaração
+  `#[cfg(test)] #[path = "tests/<módulo>.rs"] mod tests;` no final - o
+  `#[path]` só muda ONDE o arquivo mora, não a posição na árvore de
+  módulos, então `use super::*;` dentro do arquivo de teste continua
+  enxergando os itens privados do módulo pai normalmente. Objetivo: separar
+  código de produção de código de teste sem precisar do diretório
+  `tests/` de integração do Cargo (que só enxerga API pública - a maioria
+  dos testes daqui testa função privada).
+- Helper de teste compartilhado (`FakeGameProcess`) mora em
+  `src/tests/support.rs`, declarado em `lib.rs` como `#[cfg(test)] #[path
+  = "tests/support.rs"] mod test_support;` (mesmo padrão).
 - Rodar com `cargo test` (dentro de `moon_profile_runner/src-tauri/`).
 - Para endpoints HTTP: usar `tower::ServiceExt::oneshot` direto no `Router`
   (sem precisar abrir uma porta TCP de verdade - rápido e sem conflito de
