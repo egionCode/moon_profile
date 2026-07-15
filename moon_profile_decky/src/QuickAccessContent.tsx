@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { PanelSection, PanelSectionRow, ButtonItem, Field, ProgressBarItem } from "@decky/ui";
+import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { getProfiles, detectContext, stopStream } from "./api";
 import { syncHostGames } from "./gameSync";
@@ -9,6 +9,30 @@ interface SyncProgress {
   current: number;
   total: number;
   gameName: string;
+}
+
+// Barra de progresso propria, CSS puro - os componentes prontos do
+// @decky/ui (ProgressBarWithInfo, ProgressBarItem) estouravam a largura
+// do painel estreito do Quick Access de duas formas diferentes
+// (confirmado por screenshot: primeiro o texto, depois a propria caixa
+// da barra), mesmo com layout="below". Um <div> com largura em
+// porcentagem nao tem esse problema - garantido pelo CSS, nao depende do
+// comportamento interno (possivelmente com bug nesse contexto) do
+// componente da Steam.
+function ProgressBar({ percent }: { percent: number }) {
+  return (
+    <div style={{ width: "100%", height: "4px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }}>
+      <div
+        style={{
+          width: `${percent}%`,
+          height: "100%",
+          background: "#67c1f5",
+          borderRadius: "2px",
+          transition: "width 0.2s ease-out",
+        }}
+      />
+    </div>
+  );
 }
 
 export function QuickAccessContent() {
@@ -76,12 +100,7 @@ export function QuickAccessContent() {
               <Field label="Sincronizando">{`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}</Field>
             </PanelSectionRow>
             <PanelSectionRow>
-              {/* So' a barra, sem sOperationText/sTimeRemaining -
-                  ProgressBarWithInfo estourava esse texto pra fora do
-                  painel estreito do Quick Access (confirmado por
-                  screenshot: cortado no canto direito). O texto acima
-                  (Field) ja cobre a mesma informacao, sem esse problema. */}
-              <ProgressBarItem nProgress={(syncProgress.current / syncProgress.total) * 100} />
+              <ProgressBar percent={(syncProgress.current / syncProgress.total) * 100} />
             </PanelSectionRow>
           </>
         )}
