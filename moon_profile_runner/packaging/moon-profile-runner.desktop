@@ -5,4 +5,4 @@ Comment=MoonProfile local daemon - detects the end of streaming sessions
 Exec=__EXEC_PATH__
 Icon=utilities-terminal
 Terminal=false
-X-GNOME-Autostart-enabled=true
+Categories=Utility;

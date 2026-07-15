@@ -303,10 +303,16 @@ this, the data we'd be reading simply doesn't reflect reality.
   only the port is configurable, the host is the same one from the
   "Apollo config" tab (Runner and Apollo always run on the same
   machine).
-- Autostart via `~/.config/autostart/*.desktop`
-  (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`),
-  not systemd, the app needs an active graphical session to show the
-  tray. Also packaged for the AUR (`packaging/PKGBUILD`, `-git` package).
+- Autostart via a systemd `--user` unit
+  (`packaging/moon-profile-runner.service`, `WantedBy=graphical-session.target`),
+  installed by `moon_profile_runner/install.sh` or the AUR package.
+  Verified on a real KDE Plasma 6 Wayland session that
+  `graphical-session.target` correctly imports `WAYLAND_DISPLAY` and
+  `DBUS_SESSION_BUS_ADDRESS`, so the tray/GUI shows up fine, plus gets
+  restart-on-failure and `journalctl --user` logs for free. Also a
+  regular applications menu entry (`packaging/moon-profile-runner.desktop`,
+  no longer tied to autostart). Packaged for the AUR (`packaging/PKGBUILD`,
+  `-git` package).
 
 ### Per-game shortcuts generated from the Runner (replaced the game-screen button)
 

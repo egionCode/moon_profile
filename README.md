@@ -35,10 +35,11 @@ Via AUR:
 
 ```bash
 yay -S moon-profile-runner-git
+systemctl --user enable --now moon-profile-runner.service
 ```
 
-This builds, installs, and registers the graphical-session autostart.
-Without `yay`/AUR, you can build it manually:
+The `systemctl` step only needs to run once, it registers autostart on
+every login from then on. Without `yay`/AUR, you can build it manually:
 
 ```bash
 git clone https://github.com/egionCode/moon_profile.git
