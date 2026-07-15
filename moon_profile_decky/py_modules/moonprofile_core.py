@@ -81,6 +81,13 @@ def build_display_commands(host_cfg: dict) -> list:
     ]
     commands.extend(f"kscreen-doctor output.{o}.disable" for o in disable_outputs)
 
+    if host_cfg.get("enter_bigpicture"):
+        # Entra em Big Picture no host ao lancar - util pra quem usa o
+        # proprio host como HTPC/TV e quer a UI de Big Picture em vez do
+        # desktop aparecendo atras do stream. Simetrico com o "fecha o
+        # Big Picture" (condicional agora) em build_restore_commands.
+        commands.append("setsid steam steam://open/bigpicture")
+
     if host_cfg.get("move_cursor_to_corner"):
         # Alguns jogos (achado real: FIFA) prendem o cursor no meio da
         # tela mesmo jogando so' de controle - manda ele pro canto
@@ -110,7 +117,14 @@ def build_restore_commands(host_cfg: dict) -> list:
     target = host_cfg["target_output"]
     disable_outputs = host_cfg.get("disable_outputs", [])
 
-    commands = ["setsid steam steam://close/bigpicture", "sleep 2"]
+    commands = []
+    if host_cfg.get("enter_bigpicture"):
+        # So' fecha o Big Picture se o perfil de fato abriu ele no
+        # lancamento (build_display_commands) - sempre PRIMEIRO no
+        # fechamento, antes de mexer em qualquer kscreen-doctor (sair do
+        # Big Picture antes de trocar a resolucao, nao depois).
+        commands.append("setsid steam steam://close/bigpicture")
+        commands.append("sleep 2")
     commands.extend(f"kscreen-doctor output.{o}.enable" for o in disable_outputs)
     commands.append("sleep 1")
     if disable_outputs:

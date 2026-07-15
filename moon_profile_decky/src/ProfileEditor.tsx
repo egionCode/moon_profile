@@ -255,6 +255,13 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
+            label="Entrar em Big Picture ao abrir"
+            checked={draft.host.enter_bigpicture ?? false}
+            onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, enter_bigpicture: checked } })}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
             label="Mandar cursor pro canto ao jogar"
             checked={draft.host.move_cursor_to_corner ?? false}
             onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, move_cursor_to_corner: checked } })}

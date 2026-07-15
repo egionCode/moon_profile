@@ -104,10 +104,41 @@ class TestBuildDisplayCommands:
 
         assert commands[-1] == "ydotool mousemove -a 1919 1079"
 
+    def test_does_not_enter_bigpicture_by_default(self):
+        host_cfg = {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": False, "disable_outputs": []}
+
+        commands = build_display_commands(host_cfg)
+
+        assert not any("bigpicture" in c for c in commands)
+
+    def test_enters_bigpicture_when_enabled(self):
+        host_cfg = {
+            "target_output": "HDMI-A-1",
+            "resolution": "1920x1080",
+            "fps": 60,
+            "hdr": False,
+            "disable_outputs": [],
+            "enter_bigpicture": True,
+        }
+
+        commands = build_display_commands(host_cfg)
+
+        assert "setsid steam steam://open/bigpicture" in commands
+
 
 class TestBuildRestoreCommands:
-    def test_closes_big_picture_first_then_settles(self):
+    def test_does_not_close_bigpicture_by_default(self):
+        # so' faz sentido fechar o Big Picture no fechamento se o perfil
+        # de fato abriu ele no lancamento (enter_bigpicture) - ver
+        # build_display_commands.
         host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": []}
+
+        commands = build_restore_commands(host_cfg)
+
+        assert not any("bigpicture" in c for c in commands)
+
+    def test_closes_big_picture_first_then_settles_when_enabled(self):
+        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": [], "enter_bigpicture": True}
 
         commands = build_restore_commands(host_cfg)
 
@@ -133,7 +164,7 @@ class TestBuildRestoreCommands:
         assert not any("HDMI-A-1.disable" in c for c in commands)
 
     def test_re_enables_disabled_outputs_in_order_then_disables_the_target(self):
-        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": ["DP-2", "DP-3"]}
+        host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": ["DP-2", "DP-3"], "enter_bigpicture": True}
 
         commands = build_restore_commands(host_cfg)
 

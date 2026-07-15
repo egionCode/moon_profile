@@ -18,6 +18,11 @@ export interface HostConfig {
   // moonprofile_core.py) - alguns jogos (ex: FIFA) prendem o cursor no
   // meio da tela do host mesmo jogando so' de controle.
   move_cursor_to_corner?: boolean;
+  // Entra em Big Picture no host ao lancar, sai antes de mudar a
+  // resolucao no fechamento (ver build_display_commands/
+  // build_restore_commands) - util pra quem usa o proprio host como
+  // HTPC/TV.
+  enter_bigpicture?: boolean;
 }
 
 export interface Profile {

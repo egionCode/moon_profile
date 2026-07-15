@@ -59,7 +59,7 @@ class TestRegisterWithRunner:
         assert body["username"] == "u"
         assert body["password"] == "p"
         assert body["display_commands"][0] == "kscreen-doctor output.HDMI-A-1.enable"
-        assert body["restore_commands"][0] == "setsid steam steam://close/bigpicture"
+        assert body["restore_commands"][0] == "sleep 1"  # sem enter_bigpicture no fixture, nada de fechar Big Picture
 
     def test_raises_when_the_runner_is_unreachable(self):
         # O Runner NAO e' mais opcional - o Apollo nao tem prep-cmd
