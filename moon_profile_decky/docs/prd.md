@@ -118,10 +118,7 @@ moonprofile/
 │   ├── api.ts                    # bindings callable() do backend
 │   ├── QuickAccessContent.tsx    # UI principal
 │   ├── ProfileEditor.tsx         # editor CRUD de perfis
-│   ├── ConfigEditor.tsx          # config global (host, credenciais)
-│   ├── GameActionButton.tsx      # botão custom pra tela do jogo (Fase 3)
-│   └── patches/
-│       └── LibraryAppPatch.tsx   # patch React pra injetar botão (Fase 3)
+│   └── ConfigEditor.tsx          # config global (host, credenciais)
 ├── defaults/                     # arquivos default do primeiro run
 │   └── profiles.json             # perfis de exemplo
 └── PROJECT.md                    # este arquivo
@@ -217,71 +214,62 @@ Fase única (absorveu a antiga "Fase 4.5" - eram itens separados só por não de
 
 Nosso `stream_game()` usa `"auto-detach": true` justamente porque `cmd: "steam steam://rungameid/{app_id}"` retorna quase na hora (é só um relay pro client Steam - o jogo real roda solto, desprendido). Isso é exatamente o gatilho do `placebo = true`: uma vez nesse modo, `running()` **nunca mais volta a zero sozinho**, então `current_app` fica preso "rodando" até alguém chamar `close_app` manualmente (nosso "Fechar conexão"). Não tem workaround de polling que resolva isso - o dado que estaríamos lendo simplesmente não reflete a realidade.
 
-**Primeira fatia - ✅ implementada (detecção de fim de sessão):**
+**Primeira fatia - ✅ implementada e validada no device (detecção de fim de sessão):**
 - `moon_profile_runner/` (projeto Tauri v2 completo, monorepo irmão de `moon_profile_decky/`): tray icon (`TrayIconBuilder`) + janela sob demanda (`tauri.conf.json` com `windows: []`, janela criada ao clicar no tray).
-- Servidor HTTP embutido (`axum`, numa thread + runtime `tokio` própria, separada do event loop do Tauri) na porta `47991`, endpoint `GET /session/status?app_id=<id>` - usa a crate `sysinfo` pra procurar um processo com `AppId=<id>` no cmdline, **mesma convenção que `main.py:_build_prep_cmd` já usa no `pkill` do undo**, só que lendo em vez de matando. Sem autenticação - servidor aberto na rede local (decisão explícita: numa LAN doméstica já confiável, o atrito de token não compensa o ganho).
-- Testes automatizados (`cargo test`, ver `server.rs`) - já pegaram dois bugs reais rodando contra o SO de verdade: `refresh_processes()` sem `cmd()` populado, e match por substring colidindo com prefixo numérico compartilhado entre AppIds diferentes.
-- `main.py`: `RunnerClient` (stdlib, mesmo espírito do `ApolloClient`) + `check_session_status(app_id)`, com fallback seguro (`running: true`) se o runner não estiver configurado ou ficar inalcançável - nunca fecha uma sessão por engano só porque o daemon caiu.
-- Frontend (`stream.ts`): polling a cada 5s enquanto uma sessão está ativa (`watchSession`), cancelado tanto quando detecta fim de sessão quanto quando o usuário clica "Fechar conexão" manualmente (`stopSessionWatch`, chamado também em `QuickAccessContent.tsx`).
+- Servidor HTTP embutido (`axum`, numa thread + runtime `tokio` própria, separada do event loop do Tauri) na porta `47991`. Sem autenticação - servidor aberto na rede local (decisão explícita: numa LAN doméstica já confiável, o atrito de token não compensa o ganho).
+- **Mudança de arquitetura posterior, maior que a detecção original:** o Apollo deixou de ter prep-cmd nenhum (nem "do" nem "undo") - o Runner (Rust) passou a controlar 100% da tela do host (`kscreen-doctor`) e o ciclo de vida da sessão, tanto no lançamento (`POST /session/register`, roda os comandos de ligar a tela de forma síncrona antes de responder) quanto no fechamento (`POST /session/close` manual, ou autônomo via um watchdog em background que detecta sozinho quando o jogo fechou via `sysinfo`). Ver `session.rs`/`apollo.rs`/`displays.rs` e a regra "Runner controla tudo que mexe no host" em `AGENTS.md`. Isso tornou o Runner **obrigatório** (deixou de ser opcional) e eliminou o polling client-side que existia antes em `stream.ts` (arquivo removido - ver Estágio C).
+- Testes automatizados (`cargo test`) - já pegaram bugs reais rodando contra o SO/kscreen-doctor de verdade: `refresh_processes()` sem `cmd()` populado, match por substring colidindo com prefixo numérico compartilhado, e uma corrida de inicialização (watchdog fechando um jogo que ainda estava só carregando, corrigida com o campo `confirmed_running`).
 - Nova aba "Runner" na sidenav de Configurações (`RunnerConfigSection.tsx`) - só a porta é configurável, o host é o mesmo da aba "Config do Apollo" (Runner e Apollo sempre rodam na mesma máquina).
-- Autostart via `~/.config/autostart/*.desktop` (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`) - não systemd, o app precisa de sessão gráfica ativa pra mostrar o tray.
+- Autostart via `~/.config/autostart/*.desktop` (`moon_profile_runner/install.sh` + `packaging/moon-profile-runner.desktop`) - não systemd, o app precisa de sessão gráfica ativa pra mostrar o tray. Também empacotado pra AUR (`packaging/PKGBUILD`, pacote `-git`).
 
-**Ainda não validado com o Apollo/Deck reais** - só testado com processo fake isolado via `cargo test`. Falta: instalar de verdade (`./install.sh`), configurar host/porta no Deck, dar stream, fechar o jogo por dentro sem clicar "Fechar conexão" e confirmar que a sessão encerra sozinha.
+### Atalhos por jogo gerados a partir do Runner (substituiu o botão da tela do jogo)
 
-### Atalhos por jogo gerados a partir do Runner (substitui o botão da tela do jogo)
-
-Ideia: em vez de um botão injetado via patch React (frágil, só funciona pra
-jogos que já são catálogo Steam real), o Runner lê os jogos do host e o
+Em vez de um botão injetado via patch React (frágil, só funcionava pra
+jogos que já eram catálogo Steam real), o Runner lê os jogos do host e o
 Deck cria um atalho visível por jogo (com capa/hero) - o usuário clica
-"Jogar" nativo, sem precisar do botão. Resolve non-Steam e "Jogado
-recentemente" de uma vez, e permite deletar o patch mais frágil do projeto
-(só depois de validar no device - ver Estágio C).
+"Jogar" nativo, sem precisar de botão nenhum.
 
 **Achado importante do planejamento:** o atalho, ao virar item normal da
 biblioteca, pode ser clicado sem nenhum JS nosso rodando antes - por isso
 `runner.py` deixou de ser um lançador burro e passou a se auto-configurar
 (ler config/perfis do disco, detectar contexto, falar com o Apollo) antes
-de dar exec no Moonlight. Isso também simplificou `main.py:stream_game()`
-(não fala mais com o Apollo, só valida antes de tentar) e faz o botão
-antigo (ainda existente) usar exatamente o mesmo mecanismo novo.
+de dar exec no Moonlight.
 
-**Estágio A - ✅ implementado (jogos Steam reais):**
-- `py_modules/moonprofile_core.py` (novo): `ApolloClient`, `detect_context`,
-  `build_prep_cmd`, `classify_apollo_error` - extraído de `main.py` pra ser
-  importável também por `runner.py` (que roda fora do Decky Loader, sem
-  `py_modules` no `sys.path` automaticamente - `runner.py` insere isso na
-  mão, calculando o caminho a partir do próprio `__file__`).
-- `runner.py`: reescrito pra se auto-configurar (ver achado acima). Testado
-  com Apollo mockado (`configure_apollo()` roda ponta a ponta sem crashar).
-- `moon_profile_runner/src-tauri/src/games.rs` (novo): parsing de
-  `libraryfolders.vdf` + `appmanifest_*.acf` (crate `keyvalues-serde`),
-  endpoint `GET /games`. Filtra ferramentas da Valve por nome (Proton,
-  Steamworks Common Redistributables, Steam Linux Runtime) - achado real
-  rodando contra a instalação Steam de verdade desta máquina (28 entradas
-  viraram 19 depois do filtro). 11 testes automatizados no total do Runner.
-- `gameShortcuts.ts` (novo): versão por-jogo de `ensureLauncherShortcut` -
-  atalho **visível** (sem esconder), launch options fixas
-  (`MOONPROFILE_HOST_APP_ID=<id>`) setadas uma vez na criação, não mais a
-  cada lançamento.
-- `gameArtwork.ts` (novo): `SteamClient.Apps.SetCustomArtworkForApp` (API
-  confirmada lendo o código-fonte do `SteamGridDB/decky-steamgriddb`) com
-  capa/hero da CDN oficial da Steam (só funciona pra AppIDs Steam reais).
-- `gameSync.ts` (novo) + botão "Sincronizar jogos do host" no Quick Access -
-  sincronização manual por enquanto.
-
-**Ainda não validado no device** - tudo testado localmente (Apollo/processo
-mockados, fixtures de VDF), mas não com o Deck/Steam de verdade criando os
-atalhos e clicando "Jogar" neles.
+**Estágio A - ✅ implementado e validado no device (jogos Steam reais):**
+- `py_modules/moonprofile_core.py`: `ApolloClient`, `detect_context`,
+  `build_display_commands`/`build_restore_commands`, `classify_apollo_error`
+  - extraído de `main.py` pra ser importável também por `runner.py` (que
+  roda fora do Decky Loader, sem `py_modules` no `sys.path`
+  automaticamente - `runner.py` insere isso na mão).
+- `moon_profile_runner/src-tauri/src/games.rs`: parsing de
+  `libraryfolders.vdf` + `appmanifest_*.acf`, endpoint `GET /games`. Filtra
+  ferramentas da Valve por nome E software real (Aseprite, Blender etc)
+  via categorias de gameplay da API pública da Steam (achado: o campo
+  `type` da Steam não distingue jogo de ferramenta - `categories` sim).
+- `gameShortcuts.ts`: atalho **visível** (sem esconder), launch options
+  fixas (`MOONPROFILE_HOST_APP_ID=<id>`) setadas uma vez na criação.
+- `gameArtwork.ts`: `SteamClient.Apps.SetCustomArtworkForApp` com capa/hero
+  da CDN oficial da Steam (só pra AppIDs Steam reais).
+- `gameSync.ts` + botão "Sincronizar jogos do host" no Quick Access, com
+  barra de progresso real (jogo a jogo) - sincronização manual por
+  enquanto.
+- `gameCollection.ts`: agrupa os atalhos sincronizados numa coleção
+  "Streaming" (`window.collectionStore`, id persistido pra sobreviver a
+  renomeação manual).
 
 **Estágio B (a fazer): jogos non-Steam.** Parsing do `shortcuts.vdf`
 (binário) do host, novo campo `steamgriddb_api_key` na config, artwork via
 SteamGridDB (`search_game` pelo nome) em vez da CDN oficial.
 
-**Estágio C (a fazer, só depois de validar A+B no device): remover o botão
-antigo.** Deletar `LibraryAppPatch.tsx`, `GameActionButton.tsx`, tirar o
-registro de `patchLibraryApp()` de `index.tsx`. `ensureLauncherShortcut`/
-`hideShortcut` (o atalho único e escondido, `steamShortcut.ts`) também
-saem.
+**Estágio C - ✅ concluído: botão antigo removido.** Deletados
+`LibraryAppPatch.tsx`, `GameActionButton.tsx`, `stream.ts`,
+`steamShortcut.ts`, `ButtonPositionSection.tsx` (aba "Posição do botão" -
+só fazia sentido pro botão que não existe mais), e o registro de
+`patchLibraryApp()` em `index.tsx`. `main.py:stream_game()` e o campo
+`button_position`/`ButtonPosition` (config e tipo) também saíram, órfãos
+depois da remoção. `main.py:stop_stream()` continua existindo (usado pelo
+"Fechar conexão" do Quick Access, que fala com o Runner, não é o mesmo
+mecanismo do botão antigo).
 
 **Fora de escopo (não decidido se vale a pena ainda):**
 - Lista de clients conectados / status de estabilidade de conexão na janela do Runner.

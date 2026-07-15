@@ -11,7 +11,6 @@ import {
 import { ProfileList } from "./ProfileList";
 import { ProfileEditor } from "./ProfileEditor";
 import { ApolloConfigSection } from "./ApolloConfigSection";
-import { ButtonPositionSection } from "./ButtonPositionSection";
 import { RunnerConfigSection } from "./RunnerConfigSection";
 import { GamesGridSection } from "./GamesGridSection";
 import { LogsSection } from "./LogsSection";
@@ -52,11 +51,11 @@ function makeUniqueId(base: string, existingIds: string[]): string {
 
 // Pagina cheia de configuracoes, aberta via routerHook (ver index.tsx) a
 // partir do icone de engrenagem no Quick Access. Sidenav nativa da Steam
-// (SidebarNavigation) com 3 abas - Config do Apollo (default), Posicao do
-// botao e Perfis - cada uma das duas primeiras com Salvar proprio; "config"
-// e' dono daqui e passado pras duas, entao trocar de aba sem salvar nao
-// perde edicao feita na outra (as duas mexem no MESMO objeto, salvo
-// inteiro de uma vez so no backend).
+// (SidebarNavigation) - Config do Apollo (default), Perfis, Runner, Jogos
+// e Logs. "config" e' dono daqui e passado pras abas que mexem nele
+// (Apollo/Runner), entao trocar de aba sem salvar nao perde edicao feita
+// na outra (mexem no MESMO objeto, salvo inteiro de uma vez so no
+// backend).
 export function SettingsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
@@ -142,11 +141,6 @@ export function SettingsPage() {
       title: "Config do Apollo",
       identifier: "apollo",
       content: <ApolloConfigSection config={config} setConfig={setConfig} onSave={onSaveConfig} />,
-    },
-    {
-      title: "Posicao do botao",
-      identifier: "button-position",
-      content: <ButtonPositionSection config={config} setConfig={setConfig} onSave={onSaveConfig} />,
     },
     {
       title: "Perfis",

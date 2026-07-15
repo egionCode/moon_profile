@@ -8,13 +8,6 @@ import urllib.error
 import decky
 from moonprofile_core import RUNNER_PORT, detect_context
 
-APP_NAME = "SteamGame"
-
-# Mesma posicao que ja estava hardcoded no GameActionButton.tsx (canto
-# inferior esquerdo, com um respiro da borda) - agora e' so o default
-# inicial, configuravel pela UI (ConfigEditor.tsx).
-DEFAULT_BUTTON_POSITION = {"top": "", "bottom": "2.8vw", "left": "32px", "right": ""}
-
 
 def _config_path() -> str:
     return os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
@@ -85,13 +78,11 @@ class Plugin:
                 "host": "",
                 "username": "",
                 "password": "",
-                "button_position": dict(DEFAULT_BUTTON_POSITION),
                 "runner_port": RUNNER_PORT,
             }
         with open(path) as f:
             config = json.load(f)
-        # setdefault: configs salvos antes dessas features nao tem esses campos.
-        config.setdefault("button_position", dict(DEFAULT_BUTTON_POSITION))
+        # setdefault: configs salvos antes dessas features nao tem esse campo.
         config.setdefault("runner_port", RUNNER_PORT)
         return config
 
@@ -161,40 +152,6 @@ class Plugin:
 
     async def detect_context(self) -> str:
         return detect_context()
-
-    async def stream_game(self, app_id: int) -> dict:
-        # NAO fala com o Apollo aqui mais (login/prep-cmd/save_app) - quem
-        # faz isso agora e' o proprio runner.py, sozinho, na hora do
-        # lancamento (necessario pros atalhos por jogo, que o usuario pode
-        # clicar "Jogar" nativo sem passar por nenhum JS nosso antes - ver
-        # runner.py pro porque). Aqui so' valida ANTES de tentar lancar
-        # (host configurado, tem perfil pro contexto atual) pra dar um erro
-        # claro via toast em vez de deixar o runner.py falhar silencioso
-        # so' com log.
-        config = await self.get_config()
-        if not config.get("host"):
-            return {"ok": False, "error": "Configure o host do Apollo primeiro"}
-
-        context = detect_context()
-        profiles = await self.get_profiles()
-        profile = next((p for p in profiles if p.get("trigger") == context), None)
-        if profile is None:
-            return {"ok": False, "error": f"Nenhum perfil configurado pro contexto '{context}'"}
-
-        # NAO lancamos o moonlight aqui (subprocess.Popen direto) - o
-        # Gamescope (compositor do Modo Jogo) so foca/mostra janelas
-        # lancadas atraves do mecanismo real da Steam (confirmado no
-        # device: um subprocess solto abre em fullscreen mas sem foco
-        # nenhum, "escondido" atras da UI). A solucao (igual o MoonDeck
-        # faz) e' a Steam lancar um atalho non-Steam que aponta pro
-        # runner.py estatico.
-        return {
-            "ok": True,
-            "profile": profile["name"],
-            "context": context,
-            "runner_path": os.path.join(decky.DECKY_PLUGIN_DIR, "runner", "runner.py"),
-            "launch_env": {"MOONPROFILE_HOST_APP_ID": str(app_id)},
-        }
 
     async def stop_stream(self) -> dict:
         # O Runner (host) e' quem fecha de verdade - ele ja tem a sessao

@@ -33,21 +33,10 @@ export interface Profile {
   host: HostConfig;
 }
 
-// Valores CSS crus (ex: "32px", "2.8vw") aplicados direto no "position:
-// absolute" do botao na tela do jogo (ver GameActionButton.tsx) - string
-// vazia significa "nao setar essa propriedade".
-export interface ButtonPosition {
-  top: string;
-  bottom: string;
-  left: string;
-  right: string;
-}
-
 export interface Config {
   host: string; // ex: "192.168.1.6"
   username: string; // credencial admin do Apollo
   password: string; // credencial admin do Apollo
-  button_position: ButtonPosition;
   // MoonProfile Runner (daemon Tauri/Rust no host, Fase 5) - suplementa a
   // deteccao de fim de sessao que o Apollo nao consegue fazer sozinho.
   // Sem autenticacao (servidor aberto na LAN, decisao explicita). Roda na
