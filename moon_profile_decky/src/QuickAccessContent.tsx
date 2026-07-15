@@ -1,15 +1,22 @@
 import { useState, useEffect } from "react";
-import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
+import { PanelSection, PanelSectionRow, ButtonItem, Field, ProgressBarWithInfo } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { getProfiles, detectContext, stopStream } from "./api";
 import { syncHostGames } from "./gameSync";
 import { Profile } from "./types";
+
+interface SyncProgress {
+  current: number;
+  total: number;
+  gameName: string;
+}
 
 export function QuickAccessContent() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [context, setContext] = useState<string>("...");
   const [closing, setClosing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
 
   useEffect(() => {
     getProfiles().then(setProfiles);
@@ -35,13 +42,15 @@ export function QuickAccessContent() {
 
   const onSyncGames = async () => {
     setSyncing(true);
+    setSyncProgress(null);
     try {
-      await syncHostGames();
+      await syncHostGames((current, total, gameName) => setSyncProgress({ current, total, gameName }));
     } catch (e) {
       console.error("MoonProfile: erro inesperado sincronizando jogos", e);
       toaster.toast({ title: "MoonProfile - erro inesperado", body: String(e) });
     } finally {
       setSyncing(false);
+      setSyncProgress(null);
     }
   };
 
@@ -61,6 +70,14 @@ export function QuickAccessContent() {
             {syncing ? "Sincronizando..." : "Sincronizar jogos do host"}
           </ButtonItem>
         </PanelSectionRow>
+        {syncProgress && (
+          <PanelSectionRow>
+            <ProgressBarWithInfo
+              nProgress={(syncProgress.current / syncProgress.total) * 100}
+              sOperationText={`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}
+            />
+          </PanelSectionRow>
+        )}
       </PanelSection>
 
       <PanelSection title="Perfis">

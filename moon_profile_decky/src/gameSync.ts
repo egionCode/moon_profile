@@ -14,7 +14,10 @@ import { ensureGameShortcut } from "./gameShortcuts";
 import { applySteamCdnArtwork } from "./gameArtwork";
 import { addShortcutsToStreamingCollection } from "./gameCollection";
 
-export async function syncHostGames(): Promise<void> {
+// onProgress (opcional) e' chamado depois de CADA jogo processado (sucesso
+// ou falha - o contador sempre avanca) - alimenta a barra de progresso em
+// QuickAccessContent.tsx. current e' 1-based (1o jogo = current=1).
+export async function syncHostGames(onProgress?: (current: number, total: number, gameName: string) => void): Promise<void> {
   const result = await listHostGames();
   if (!result.ok || !result.runner_path) {
     toaster.toast({ title: "MoonProfile - erro", body: result.error ?? "Falha desconhecida" });
@@ -25,7 +28,10 @@ export async function syncHostGames(): Promise<void> {
 
   let created = 0;
   const deckAppIds: number[] = [];
-  for (const game of result.games) {
+  const total = result.games.length;
+  for (const [index, game] of result.games.entries()) {
+    onProgress?.(index + 1, total, game.name);
+
     const shortcutAppId = await ensureGameShortcut(
       shortcuts,
       game.host_app_id,
