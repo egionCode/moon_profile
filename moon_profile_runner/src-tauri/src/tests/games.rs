@@ -1,8 +1,8 @@
 use super::*;
 
-// Cria uma "instalacao Steam" fake numa pasta temporaria - 2
-// bibliotecas, um app valido em cada, um arquivo lixo que nao e' um
-// appmanifest (nao deveria quebrar nem aparecer no resultado).
+// Creates a fake "Steam install" in a temporary folder - 2 libraries,
+// one valid app in each, one junk file that isn't an appmanifest
+// (shouldn't crash nor show up in the result).
 fn write_fixture(root: &Path) {
     let steamapps = root.join("steamapps");
     fs::create_dir_all(&steamapps).unwrap();
@@ -52,10 +52,10 @@ fn write_fixture(root: &Path) {
     )
     .unwrap();
 
-    // arquivo que nao e' appmanifest - nao deveria ser lido nem quebrar nada
-    fs::write(steamapps.join("libraryfolder.vdf.bak"), "lixo qualquer").unwrap();
+    // file that isn't an appmanifest - shouldn't be read nor break anything
+    fs::write(steamapps.join("libraryfolder.vdf.bak"), "some junk").unwrap();
 
-    // ferramenta da Valve (nao e' jogo) - nao deveria aparecer no resultado
+    // Valve tooling (not a game) - shouldn't show up in the result
     fs::write(
         steamapps.join("appmanifest_2805730.acf"),
         r#""AppState"
@@ -74,8 +74,8 @@ fn lists_games_from_all_library_folders() {
     write_fixture(tmp.path());
 
     let mut games = list_steam_games(tmp.path());
-    // por nome, nao por host_app_id - "570" > "2050650" como string
-    // (comparacao lexicografica, nao numerica).
+    // by name, not by host_app_id - "570" > "2050650" as a string
+    // (lexicographic comparison, not numeric).
     games.sort_by(|a, b| a.name.cmp(&b.name));
 
     assert_eq!(
@@ -90,7 +90,7 @@ fn lists_games_from_all_library_folders() {
 #[test]
 fn returns_empty_when_libraryfolders_vdf_is_missing() {
     let tmp = tempfile::tempdir().unwrap();
-    // sem escrever nenhuma fixture - steam_root nao tem nem steamapps/
+    // no fixture written - steam_root doesn't even have steamapps/
     assert_eq!(list_steam_games(tmp.path()), Vec::new());
 }
 
@@ -100,7 +100,7 @@ fn ignores_files_that_are_not_app_manifests() {
     write_fixture(tmp.path());
 
     let games = list_steam_games(tmp.path());
-    assert!(games.iter().all(|g| g.name != "lixo qualquer"));
+    assert!(games.iter().all(|g| g.name != "some junk"));
 }
 
 #[test]
@@ -108,10 +108,10 @@ fn excludes_valve_tooling_entries() {
     let tmp = tempfile::tempdir().unwrap();
     write_fixture(tmp.path());
 
-    // fixture inclui "Proton 9.0" (appid 2805730) - achado real rodando
-    // contra a instalacao Steam de verdade desta maquina: sem esse
-    // filtro, "Proton 9.0"/"Steamworks Common Redistributables"/etc
-    // apareciam na lista como se fossem jogos.
+    // fixture includes "Proton 9.0" (appid 2805730) - a real finding
+    // from running against this machine's real Steam install: without
+    // this filter, "Proton 9.0"/"Steamworks Common Redistributables"/etc
+    // showed up in the list as if they were games.
     let games = list_steam_games(tmp.path());
     assert!(games.iter().all(|g| g.host_app_id != "2805730"));
     assert!(games.iter().all(|g| !g.name.starts_with("Proton")));
@@ -124,20 +124,20 @@ fn is_valve_tooling_cases() {
     assert!(is_valve_tooling("Steamworks Common Redistributables"));
     assert!(is_valve_tooling("Steam Linux Runtime - Sniper"));
     assert!(!is_valve_tooling("Resident Evil 4"));
-    assert!(!is_valve_tooling("Protontricks Helper")); // nao comeca com "Proton " (com espaco)
+    assert!(!is_valve_tooling("Protontricks Helper")); // doesn't start with "Proton " (with a space)
 }
 
 #[test]
 fn has_gameplay_category_cases() {
     assert!(has_gameplay_category(&Some(vec![Category { id: 2 }]))); // Single-player
-    assert!(has_gameplay_category(&Some(vec![Category { id: 22 }, Category { id: 1 }]))); // mistura, mas tem Multi-player
-    assert!(!has_gameplay_category(&Some(vec![Category { id: 22 }, Category { id: 30 }]))); // so' achievements/workshop
+    assert!(has_gameplay_category(&Some(vec![Category { id: 22 }, Category { id: 1 }]))); // mixed, but has Multi-player
+    assert!(!has_gameplay_category(&Some(vec![Category { id: 22 }, Category { id: 30 }]))); // only achievements/workshop
     assert!(!has_gameplay_category(&Some(Vec::new())));
-    assert!(!has_gameplay_category(&None)); // Aseprite/Blender: sem categorias nenhuma
+    assert!(!has_gameplay_category(&None)); // Aseprite/Blender: no categories at all
 }
 
-// wiremock em vez da API real da Steam - testes nao podem depender de
-// rede de verdade (lento, instavel, sujeito a rate limit).
+// wiremock instead of the real Steam API - tests can't depend on a real
+// network (slow, unstable, subject to rate limiting).
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -162,22 +162,22 @@ async fn filter_to_games_only_excludes_entries_without_a_gameplay_category() {
         .await;
 
     let candidates = vec![
-        HostGame { name: "Jogo de Verdade".into(), host_app_id: "111".into(), is_steam: true },
-        HostGame { name: "Programa Qualquer".into(), host_app_id: "222".into(), is_steam: true },
+        HostGame { name: "Real Game".into(), host_app_id: "111".into(), is_steam: true },
+        HostGame { name: "Some Program".into(), host_app_id: "222".into(), is_steam: true },
     ];
 
     let result = filter_to_games_only(candidates, &mock_server.uri()).await;
 
-    assert_eq!(result, vec![HostGame { name: "Jogo de Verdade".into(), host_app_id: "111".into(), is_steam: true }]);
+    assert_eq!(result, vec![HostGame { name: "Real Game".into(), host_app_id: "111".into(), is_steam: true }]);
 }
 
 #[tokio::test]
 async fn filter_to_games_only_fails_open_when_api_is_unreachable() {
-    // porta 0 nunca aceita conexao - simula a API inalcancavel sem
-    // depender de internet de verdade nem de um timeout longo.
-    let candidates = vec![HostGame { name: "Sem Rede".into(), host_app_id: "333".into(), is_steam: true }];
+    // port 0 never accepts a connection - simulates the API being
+    // unreachable without depending on a real network nor a long timeout.
+    let candidates = vec![HostGame { name: "No Network".into(), host_app_id: "333".into(), is_steam: true }];
 
     let result = filter_to_games_only(candidates, "http://127.0.0.1:0").await;
 
-    assert_eq!(result, vec![HostGame { name: "Sem Rede".into(), host_app_id: "333".into(), is_steam: true }]);
+    assert_eq!(result, vec![HostGame { name: "No Network".into(), host_app_id: "333".into(), is_steam: true }]);
 }

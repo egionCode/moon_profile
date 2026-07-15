@@ -1,7 +1,7 @@
-// So' compilado em testes - processo fake com "AppId=<id>" no cmdline,
-// compartilhado pelos testes de server.rs (is_app_id_running) e
-// session.rs (watchdog de fechamento autonomo), pra testar a deteccao de
-// processo contra o SO de verdade em vez de mockar sysinfo.
+// Only compiled in tests - fake process with "AppId=<id>" in its
+// cmdline, shared by the server.rs tests (is_app_id_running) and
+// session.rs (autonomous-close watchdog), to test process detection
+// against the real OS instead of mocking sysinfo.
 use std::process::Child;
 
 pub(crate) struct FakeGameProcess {
@@ -15,7 +15,7 @@ impl FakeGameProcess {
             .arg("-c")
             .arg(format!("exec -a \"{marker}\" sleep 30"))
             .spawn()
-            .expect("falha ao spawnar processo fake pro teste");
+            .expect("failed to spawn fake process for the test");
         Self { child }
     }
 }

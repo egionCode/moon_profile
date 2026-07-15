@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Instala o MoonProfile Runner como autostart do KDE: builda o binario de
-# release, copia pra ~/.local/bin/ e registra o autostart em
-# ~/.config/autostart/. Autostart de sessao (nao um servico systemd) porque
-# o app tem tray/GUI e precisa de sessao grafica ativa pra aparecer.
+# Installs MoonProfile Runner as a KDE autostart entry: builds the
+# release binary, copies it to ~/.local/bin/, and registers the
+# autostart entry in ~/.config/autostart/. Session autostart (not a
+# systemd service) because the app has a tray/GUI and needs an active
+# graphical session to show up.
 #
-# Uso: ./install.sh
+# Usage: ./install.sh
 
 set -euo pipefail
 
@@ -15,16 +16,16 @@ AUTOSTART_DIR="${HOME}/.config/autostart"
 
 log() { printf '[install] %s\n' "$1"; }
 
-log "buildando release..."
+log "building release..."
 cargo build --release --manifest-path "${SCRIPT_DIR}/src-tauri/Cargo.toml"
 
-log "copiando binario pra ${INSTALL_BIN}..."
+log "copying binary to ${INSTALL_BIN}..."
 mkdir -p "${HOME}/.local/bin"
 cp "${SCRIPT_DIR}/src-tauri/target/release/${BIN_NAME}" "${INSTALL_BIN}"
 
-log "registrando autostart em ${AUTOSTART_DIR}..."
+log "registering autostart in ${AUTOSTART_DIR}..."
 mkdir -p "${AUTOSTART_DIR}"
 sed "s|__EXEC_PATH__|${INSTALL_BIN}|" "${SCRIPT_DIR}/packaging/moon-profile-runner.desktop" \
     > "${AUTOSTART_DIR}/moon-profile-runner.desktop"
 
-log "pronto - inicia sozinho no proximo login, ou roda agora com: ${INSTALL_BIN}"
+log "done - starts on its own at next login, or run it now with: ${INSTALL_BIN}"

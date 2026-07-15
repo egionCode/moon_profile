@@ -36,19 +36,21 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|_app| {
-            // Servidor HTTP + watchdog de sessao rodam numa thread + runtime
-            // tokio proprias, separado do event loop do Tauri (que fica no
-            // thread principal cuidando de tray/janela). Sem token/pareamento -
-            // servidor aberto na rede local (decisao explicita: LAN
-            // domestica ja e' confiavel o suficiente, e colar token na
-            // config do Deck toda vez e' atrito sem ganho real aqui).
+            // The HTTP server + session watchdog run on their own thread +
+            // tokio runtime, separate from Tauri's event loop (which stays
+            // on the main thread handling the tray/window). No token/pairing
+            // - server open on the local network (explicit decision: a home
+            // LAN is already trustworthy enough, and pasting a token into
+            // the Deck's config every time is friction with no real gain
+            // here).
             //
-            // Os handlers axum (server.rs/session.rs) nao conhecem
-            // Tauri/AppHandle - so' mandam um evento nesse canal quando algo
-            // acontece (sincronia de jogos, sessao fechada sozinha). Quem
-            // escuta e dispara a notificacao de desktop e' esta task, que
-            // roda na MESMA runtime do servidor mas tem o AppHandle de
-            // verdade (clonado do _app do setup()).
+            // The axum handlers (server.rs/session.rs) don't know about
+            // Tauri/AppHandle at all - they just send an event on this
+            // channel when something happens (games synced, session closed
+            // on its own). This task is the one listening and firing the
+            // desktop notification, running on the SAME runtime as the
+            // server but with a real AppHandle (cloned from setup()'s
+            // _app).
             let notification_handle = _app.handle().clone();
             let (notify_tx, mut notify_rx) = mpsc::unbounded_channel();
             let session_state = Arc::new(Mutex::new(None));
@@ -60,15 +62,15 @@ pub fn run() {
                     let rt = tokio::runtime::Builder::new_multi_thread()
                         .enable_all()
                         .build()
-                        .expect("falha ao criar a runtime tokio do servidor");
+                        .expect("failed to create the server's tokio runtime");
                     rt.spawn(async move {
                         while let Some(event) = notify_rx.recv().await {
                             let (title, body) = match event {
                                 RunnerEvent::GamesSynced => {
-                                    ("MoonProfile Runner", "Sincronizando jogos com o Deck...")
+                                    ("MoonProfile Runner", "Syncing games with the Deck...")
                                 }
                                 RunnerEvent::SessionClosed => {
-                                    ("MoonProfile Runner", "Sessao encerrada automaticamente (jogo fechado)")
+                                    ("MoonProfile Runner", "Session closed automatically (game exited)")
                                 }
                             };
                             let _ = notification_handle.notification().builder().title(title).body(body).show();
@@ -83,8 +85,8 @@ pub fn run() {
                 }
             });
 
-            let show_i = MenuItem::with_id(_app, "show", "Abrir MoonProfile Runner", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(_app, "quit", "Sair", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(_app, "show", "Open MoonProfile Runner", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(_app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(_app, &[&show_i, &quit_i])?;
 
             TrayIconBuilder::new()

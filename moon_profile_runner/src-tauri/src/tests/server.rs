@@ -7,19 +7,19 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
 
-// Unitario e rapido - nao precisa de processo de verdade, so cobre a
-// logica de match pura (os casos de borda do prefixo compartilhado).
+// Unit test, fast - doesn't need a real process, just covers the pure
+// matching logic (the shared-prefix edge cases).
 #[test]
 fn cmd_arg_matches_app_id_cases() {
     assert!(cmd_arg_matches_app_id("AppId=42", "AppId=42"));
     assert!(cmd_arg_matches_app_id("SteamLaunch AppId=42 --", "AppId=42"));
     assert!(!cmd_arg_matches_app_id("AppId=420", "AppId=42"));
     assert!(!cmd_arg_matches_app_id("AppId=4", "AppId=42"));
-    assert!(!cmd_arg_matches_app_id("nada a ver", "AppId=42"));
+    assert!(!cmd_arg_matches_app_id("nothing relevant", "AppId=42"));
 }
 
-// IDs de teste bem distintos (900xxx) pra nao colidir por acaso com um
-// AppId de jogo de verdade rodando na maquina de dev enquanto testa.
+// Test IDs quite distinct (900xxx) to avoid accidentally colliding with
+// a real game's AppId running on the dev machine while testing.
 
 #[tokio::test]
 async fn is_app_id_running_false_when_no_matching_process_exists() {
@@ -39,7 +39,7 @@ async fn is_app_id_running_true_when_a_matching_process_is_alive() {
 async fn is_app_id_running_false_again_after_the_process_exits() {
     let fake = FakeGameProcess::spawn("900003");
     tokio::time::sleep(Duration::from_millis(200)).await;
-    drop(fake); // mata e espera terminar antes de perguntar de novo
+    drop(fake); // kills and waits for it to exit before checking again
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     assert!(!is_app_id_running("900003"));
@@ -47,10 +47,10 @@ async fn is_app_id_running_false_again_after_the_process_exits() {
 
 #[tokio::test]
 async fn is_app_id_running_does_not_match_a_different_app_id_with_a_shared_prefix() {
-    // "900004" nao deveria bater com um processo que tem "AppId=9000044"
-    // (prefixo compartilhado) - contains() e' substring, entao esse
-    // caso confirma que o formato "AppId=<id>" exato (sem separador
-    // depois) nao gera falso positivo aqui na pratica.
+    // "900004" shouldn't match a process that has "AppId=9000044"
+    // (shared prefix) - contains() is substring matching, so this case
+    // confirms that the exact "AppId=<id>" format (with no separator
+    // after) doesn't produce a false positive here in practice.
     let fake = FakeGameProcess::spawn("9000044");
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -64,10 +64,10 @@ fn test_app() -> Router {
     app(tx, session_state, ApolloBaseUrl("http://127.0.0.1:0".to_string()))
 }
 
-// So confirma que a rota esta' registrada e devolve um JSON valido - a
-// logica de parsing dos jogos em si (as fixtures de VDF, o caso de
-// "libraryfolders.vdf ausente", etc) ja' e' coberta a fundo em
-// games.rs; duplicar isso aqui so' testaria a mesma coisa duas vezes.
+// Only confirms the route is registered and returns valid JSON - the
+// actual game-parsing logic (the VDF fixtures, the "missing
+// libraryfolders.vdf" case, etc) is already covered in depth in
+// games.rs; duplicating it here would just test the same thing twice.
 #[tokio::test]
 async fn games_route_returns_a_json_array() {
     let response = test_app()
@@ -87,9 +87,9 @@ async fn games_route_returns_a_json_array() {
     let _games: Vec<crate::games::HostGame> = serde_json::from_slice(&bytes).unwrap();
 }
 
-// So confirma que a rota esta' registrada e devolve um JSON valido - a
-// logica de parsing do kscreen-doctor -j ja' e' coberta a fundo em
-// displays.rs (fixtures reais, JSON malformado, etc).
+// Only confirms the route is registered and returns valid JSON - the
+// kscreen-doctor -j parsing logic is already covered in depth in
+// displays.rs (real fixtures, malformed JSON, etc).
 #[tokio::test]
 async fn displays_route_returns_a_json_array() {
     let response = test_app()
@@ -109,11 +109,12 @@ async fn displays_route_returns_a_json_array() {
     let _displays: Vec<crate::displays::HostDisplay> = serde_json::from_slice(&bytes).unwrap();
 }
 
-// "quando receber uma chamada de sincronia" - o handler manda um evento
-// pro canal a cada GET /games, que lib.rs escuta pra disparar a
-// notificacao de desktop de verdade (com AppHandle real, fora do
-// alcance deste teste - testar so' o sinal, nao a notificacao em si,
-// evita precisar de tauri::test::mock_builder generico sobre Runtime).
+// "when a sync call is received" - the handler sends an event to the
+// channel on every GET /games, which lib.rs listens to in order to fire
+// the real desktop notification (with a real AppHandle, out of scope
+// for this test - testing just the signal, not the notification
+// itself, avoids needing tauri::test::mock_builder generic over the
+// Runtime).
 #[tokio::test]
 async fn games_route_sends_a_games_synced_event() {
     let (tx, mut rx) = mpsc::unbounded_channel();

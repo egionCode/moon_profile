@@ -27,8 +27,8 @@ package() {
   cd "$srcdir/${pkgname%-git}/moon_profile_runner/src-tauri"
   install -Dm755 "target/release/moon_profile_runner" "$pkgdir/usr/bin/moon-profile-runner"
 
-  # Autostart de sessao grafica (nao servico systemd) - o app tem
-  # tray/GUI e precisa de uma sessao ativa pra aparecer.
+  # Graphical session autostart (not a systemd service) - the app has a
+  # tray/GUI and needs an active session to show up.
   install -Dm644 "../packaging/moon-profile-runner.desktop" \
     "$pkgdir/etc/xdg/autostart/moon-profile-runner.desktop"
   sed -i "s|__EXEC_PATH__|/usr/bin/moon-profile-runner|" \

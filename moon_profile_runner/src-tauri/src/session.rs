@@ -1,38 +1,41 @@
-// Ciclo de vida da sessao, 100% controlado pelo Runner - o Apollo NAO tem
-// mais prep-cmd nenhum (nem "do" nem "undo"), decisao explicita pra
-// deixa-lo mais simples ("plug and play": so' precisa saber conectar e
-// rodar o "cmd") e dar ao Deck controle total sobre a tela do host. Quem
-// liga a tela no lancamento (display_commands) e desliga no fechamento
-// (restore_commands) e' sempre este modulo, rodando os comandos direto
-// via shell.
+// Session lifecycle, 100% controlled by the Runner - Apollo no longer
+// has any prep-cmd at all (neither "do" nor "undo"), an explicit
+// decision to keep it simpler ("plug and play": it only needs to know
+// how to connect and run the "cmd") and to give the Deck full control
+// over the host's screen. Whoever turns the screen on at launch
+// (display_commands) and off at close (restore_commands) is always
+// this module, running the commands directly via shell.
 //
-// runner.py (Deck) registra a sessao ao configurar o Apollo (app_id +
-// credenciais, EM MEMORIA, nunca gravadas em disco no host, mais os
-// comandos de tela pre-calculados a partir do perfil) - o registro em si
-// ja' roda os display_commands de forma SINCRONA (so' responde depois),
-// entao o Runner deixou de ser opcional: sem ele, a tela nunca troca.
+// runner.py (Deck) registers the session while configuring Apollo
+// (app_id + credentials, IN MEMORY, never written to disk on the host,
+// plus the screen commands precomputed from the profile) - the
+// registration itself already runs the display_commands SYNCHRONOUSLY
+// (it only responds afterwards), so the Runner stopped being optional:
+// without it, the screen never switches.
 //
-// Depois de registrada, um watchdog em background (mesma runtime tokio
-// do servidor HTTP, ver lib.rs) fica de olho no processo via sysinfo
-// (server.rs: is_app_id_running) e, quando detecta que o jogo fechou
-// sozinho, restaura a tela e avisa o Apollo pra derrubar a conexao - sem
-// precisar do Deck pedir nada. Cobre os dois fluxos de lancamento (botao
-// antigo e atalho novo por jogo), ja que os dois passam pelo mesmo
-// runner.py.
+// Once registered, a background watchdog (same tokio runtime as the
+// HTTP server, see lib.rs) keeps an eye on the process via sysinfo
+// (server.rs: is_app_id_running) and, when it detects the game closed
+// on its own, restores the screen and tells Apollo to drop the
+// connection, without the Deck needing to ask for anything. This covers
+// both launch flows (the old button and the new per-game shortcut),
+// since both go through the same runner.py.
 //
-// "Fechar conexao" manual (QuickAccessContent.tsx -> POST /session/close)
-// mata o jogo (se ainda estiver vivo, com SIGTERM + espera adaptativa +
-// SIGKILL se preciso) e restaura a tela - diferente do watchdog, que so'
-// age depois de confirmar que o processo ja morreu sozinho.
+// Manual "close connection" (QuickAccessContent.tsx -> POST
+// /session/close) kills the game (if still alive, with SIGTERM +
+// adaptive wait + SIGKILL if needed) and restores the screen, unlike
+// the watchdog, which only acts after confirming the process has
+// already died on its own.
 //
-// ORDEM importa pra experiencia do usuario: em AMBOS os fluxos, o Apollo
-// e' avisado (o que derruba o stream/desconecta o Moonlight no Deck,
-// tirando a tela de streaming) ANTES de matar o jogo/restaurar a tela -
-// nao depois. Kill do jogo (que pode levar ate' 20s de periodo de graca
-// no fechamento manual) e os comandos de restauracao rodam DEPOIS, em
-// background (tokio::spawn, sem bloquear a resposta) - o usuario ve o
-// Deck sair da tela de streaming na hora, o resto acontece independente
-// no host, sem ele esperando.
+// ORDER matters for the user experience: in BOTH flows, Apollo is
+// notified (which drops the stream/disconnects Moonlight on the Deck,
+// taking it off the streaming screen) BEFORE killing the game/restoring
+// the screen, not after. Killing the game (which can take up to 20s of
+// grace period on manual close) and the restore commands run
+// AFTERWARDS, in the background (tokio::spawn, without blocking the
+// response) - the user sees the Deck leave the streaming screen right
+// away, the rest happens independently on the host, without them
+// waiting for it.
 
 use axum::extract::Extension;
 use axum::Json;
@@ -49,25 +52,27 @@ pub struct ActiveSession {
     pub app_id: String,
     pub username: String,
     pub password: String,
-    // Comandos de restauracao de tela (kscreen-doctor + fechar Big
-    // Picture), pre-calculados por runner.py a partir do perfil - o
-    // Runner so' os executa, sem interpretar o significado de cada um
-    // (ver build_restore_commands em moonprofile_core.py).
+    // Screen restore commands (kscreen-doctor + closing Big Picture),
+    // precomputed by runner.py from the profile - the Runner just
+    // executes them, without interpreting what each one means (see
+    // build_restore_commands in moonprofile_core.py).
     pub restore_commands: Vec<String>,
-    // Bug real encontrado no device: a primeira checagem do watchdog pode
-    // acontecer ANTES do jogo terminar de abrir (Steam demora um tempo
-    // variavel pra spawnar o processo "reaper ... AppId=<id>" - Proton,
-    // shader cache, etc) - sem esse campo, "ainda nao apareceu" e "ja
-    // fechou" ficam indistinguiveis, e o watchdog fechava um jogo que
-    // estava so' CARREGANDO. So' comeca a considerar "fechou" depois de
-    // ter visto o processo rodando de verdade pelo menos uma vez.
+    // Real bug found on-device: the watchdog's first check can happen
+    // BEFORE the game finishes opening (Steam takes a variable amount of
+    // time to spawn the "reaper ... AppId=<id>" process - Proton, shader
+    // cache, etc) - without this field, "hasn't shown up yet" and
+    // "already closed" are indistinguishable, and the watchdog would
+    // close a game that was just LOADING. Only starts considering it
+    // "closed" after having seen the process actually running at least
+    // once.
     pub confirmed_running: bool,
 }
 
 pub type SessionState = Arc<Mutex<Option<ActiveSession>>>;
 
-// Newtype (nao so' String) pra poder ser distinguido de outras Extension<String>
-// no mesmo Router - axum identifica extensions pelo TYPE, nao por nome.
+// Newtype (not just a String) so it can be distinguished from other
+// Extension<String> on the same Router - axum identifies extensions by
+// TYPE, not by name.
 #[derive(Clone)]
 pub struct ApolloBaseUrl(pub String);
 
@@ -76,10 +81,11 @@ pub struct RegisterSessionRequest {
     app_id: String,
     username: String,
     password: String,
-    // Comandos de LIGAR a tela (kscreen-doctor: enable/mode/hdr/disable
-    // dos outros outputs) - rodados AGORA MESMO, antes de responder (ver
-    // register_session), pra garantir que a tela ja esta' no estado certo
-    // quando o runner.py (Deck) prosseguir pro exec do Moonlight.
+    // Commands to TURN ON the screen (kscreen-doctor: enable/mode/hdr/
+    // disable of the other outputs) - run RIGHT NOW, before responding
+    // (see register_session), to guarantee the screen is already in the
+    // right state by the time runner.py (Deck) proceeds to exec
+    // Moonlight.
     #[serde(default)]
     display_commands: Vec<String>,
     #[serde(default)]
@@ -92,17 +98,17 @@ pub struct CloseResponse {
     error: Option<String>,
 }
 
-// Roda um comando de shell (string unica, mesmo formato que o Apollo
-// usava no prep-cmd) - best-effort: uma falha aqui so' e' logada, nao
-// interrompe os comandos seguintes (ex: kscreen-doctor tentando desligar
-// um output que ja esta' desligado, nao e' fatal).
+// Runs a shell command (single string, same format Apollo used to use
+// in prep-cmd) - best-effort: a failure here is only logged, it doesn't
+// stop the following commands (e.g. kscreen-doctor trying to turn off
+// an output that's already off isn't fatal).
 async fn run_shell_command(cmd: &str) {
     match tokio::process::Command::new("sh").arg("-c").arg(cmd).status().await {
         Ok(status) if !status.success() => {
-            println!("[{}] [session] comando saiu com {status}: {cmd}", timestamp());
+            println!("[{}] [session] command exited with {status}: {cmd}", timestamp());
         }
         Err(error) => {
-            println!("[{}] [session] falha ao rodar comando ({error}): {cmd}", timestamp());
+            println!("[{}] [session] failed to run command ({error}): {cmd}", timestamp());
         }
         Ok(_) => {}
     }
@@ -110,25 +116,25 @@ async fn run_shell_command(cmd: &str) {
 
 async fn run_shell_commands(commands: &[String]) {
     for cmd in commands {
-        println!("[{}] [session] rodando: {cmd}", timestamp());
+        println!("[{}] [session] running: {cmd}", timestamp());
         run_shell_command(cmd).await;
     }
 }
 
-// So' usado pelo fechamento MANUAL - o watchdog nunca chama isso, porque
-// so' age depois de confirmar que o processo JA morreu sozinho (nada pra
-// matar). Aqui o jogo pode genuinamente ainda estar rodando, entao pede
-// SIGTERM e espera ATE 20s - mas poll a cada 1s e sai assim que o
-// processo morrer, em vez de sempre esperar os 20s inteiros como o
-// array de undo antigo do Apollo fazia. So' manda SIGKILL se o periodo de
-// graca inteiro passar sem o processo sair sozinho.
+// Only used by MANUAL close - the watchdog never calls this, because it
+// only acts after confirming the process has ALREADY died on its own
+// (nothing to kill). Here the game can genuinely still be running, so
+// it sends SIGTERM and waits UP TO 20s, but polls every 1s and exits as
+// soon as the process dies, instead of always waiting the full 20s like
+// Apollo's old undo array used to. Only sends SIGKILL if the whole
+// grace period passes without the process exiting on its own.
 async fn kill_game_process(app_id: &str) {
     if !is_app_id_running(app_id) {
-        println!("[{}] [session] app_id={app_id} ja nao esta rodando, nada pra matar", timestamp());
+        println!("[{}] [session] app_id={app_id} is already not running, nothing to kill", timestamp());
         return;
     }
 
-    println!("[{}] [session] mandando SIGTERM (AppId={app_id})", timestamp());
+    println!("[{}] [session] sending SIGTERM (AppId={app_id})", timestamp());
     run_shell_command(&format!("pkill -TERM -f AppId={app_id}")).await;
 
     let grace_period = Duration::from_secs(20);
@@ -136,7 +142,7 @@ async fn kill_game_process(app_id: &str) {
     while is_app_id_running(app_id) {
         if start.elapsed() >= grace_period {
             println!(
-                "[{}] [session] app_id={app_id} nao saiu sozinho no periodo de graca - forcando com SIGKILL",
+                "[{}] [session] app_id={app_id} did not exit on its own within the grace period, forcing with SIGKILL",
                 timestamp()
             );
             run_shell_command(&format!("pkill -KILL -f AppId={app_id}")).await;
@@ -144,20 +150,20 @@ async fn kill_game_process(app_id: &str) {
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    println!("[{}] [session] app_id={app_id} saiu sozinho depois do SIGTERM", timestamp());
+    println!("[{}] [session] app_id={app_id} exited on its own after SIGTERM", timestamp());
 }
 
-// Registra a sessao - roda os display_commands DE FORMA SINCRONA antes
-// de responder (por isso runner.py so' prossegue pro exec do Moonlight
-// depois que esta chamada retorna: garante que a tela ja esta' no
-// estado certo quando o stream comecar).
+// Registers the session - runs the display_commands SYNCHRONOUSLY
+// before responding (which is why runner.py only proceeds to exec
+// Moonlight after this call returns: guarantees the screen is already
+// in the right state by the time the stream starts).
 pub async fn register_session(
     Extension(state): Extension<SessionState>,
     Json(req): Json<RegisterSessionRequest>,
 ) -> Json<CloseResponse> {
-    println!("[{}] [session] registrando app_id={} - ligando a tela...", timestamp(), req.app_id);
+    println!("[{}] [session] registering app_id={} - turning on the screen...", timestamp(), req.app_id);
     run_shell_commands(&req.display_commands).await;
-    println!("[{}] [session] tela ligada, sessao registrada: app_id={}", timestamp(), req.app_id);
+    println!("[{}] [session] screen on, session registered: app_id={}", timestamp(), req.app_id);
 
     let mut guard = state.lock().await;
     *guard = Some(ActiveSession {
@@ -170,11 +176,11 @@ pub async fn register_session(
     Json(CloseResponse { ok: true, error: None })
 }
 
-// Fechamento IMEDIATO (manual, "Fechar conexao") - avisa o Apollo PRIMEIRO
-// (derruba a conexao/stream no Deck na hora) e so' depois mata o jogo (se
-// ainda estiver vivo - SIGTERM + espera adaptativa + SIGKILL, ver
-// kill_game_process) e restaura a tela, em background, sem bloquear a
-// resposta.
+// IMMEDIATE close (manual, "Close connection") - notifies Apollo FIRST
+// (drops the connection/stream on the Deck right away) and only then
+// kills the game (if still alive, SIGTERM + adaptive wait + SIGKILL,
+// see kill_game_process) and restores the screen, in the background,
+// without blocking the response.
 pub async fn close_session_now(
     Extension(state): Extension<SessionState>,
     Extension(ApolloBaseUrl(base_url)): Extension<ApolloBaseUrl>,
@@ -183,26 +189,27 @@ pub async fn close_session_now(
     let session = state.lock().await.clone();
 
     let Some(session) = session else {
-        println!("[{}] [session] fechamento manual pedido, mas nao ha sessao registrada", timestamp());
+        println!("[{}] [session] manual close requested, but no session is registered", timestamp());
         return Json(CloseResponse {
             ok: false,
-            error: Some("Nenhuma sessao registrada no Runner".to_string()),
+            error: Some("No session registered in the Runner".to_string()),
         });
     };
 
     println!(
-        "[{}] [session] fechamento manual pedido - avisando o Apollo agora (kill/restauro rodam depois, em background)",
+        "[{}] [session] manual close requested - notifying Apollo now (kill/restore run afterwards, in the background)",
         timestamp()
     );
     match apollo::close_session_at(&base_url, &session.username, &session.password).await {
         Ok(()) => {
-            println!("[{}] [session] Apollo fechou a sessao com sucesso (fechamento manual)", timestamp());
+            println!("[{}] [session] Apollo closed the session successfully (manual close)", timestamp());
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
 
-            // O Deck ja recebeu a confirmacao (o stream ja foi
-            // derrubado) - matar o jogo (se ainda vivo) e restaurar a
-            // tela nao precisam bloquear essa resposta.
+            // The Deck has already received the confirmation (the
+            // stream has already been dropped) - killing the game (if
+            // still alive) and restoring the screen don't need to block
+            // this response.
             let app_id = session.app_id.clone();
             let restore_commands = session.restore_commands.clone();
             tokio::spawn(async move {
@@ -213,29 +220,30 @@ pub async fn close_session_now(
             Json(CloseResponse { ok: true, error: None })
         }
         Err(error) => {
-            println!("[{}] [session] Apollo falhou ao fechar (fechamento manual): {error}", timestamp());
+            println!("[{}] [session] Apollo failed to close (manual close): {error}", timestamp());
             Json(CloseResponse { ok: false, error: Some(error) })
         }
     }
 }
 
-// Roda pra sempre numa task em background (ver lib.rs) - a cada
-// intervalo, checa se a sessao registrada ainda esta rodando de verdade
-// (sysinfo, o SO nao mente mesmo quando o Apollo mente). Se morreu, avisa
-// o Apollo IMEDIATAMENTE (derruba a conexao no Deck na hora - nao ha'
-// prep-cmd nenhum no Apollo pra esperar) e so' depois restaura a tela, em
-// background, sem bloquear essa etapa. Extraida como funcao separada (nao
-// so' o loop inline) pra poder testar UMA passada sem precisar de
-// sleep/timing de verdade no teste.
+// Runs forever in a background task (see lib.rs) - every interval,
+// checks whether the registered session is actually still running
+// (sysinfo, the OS doesn't lie even when Apollo does). If it died,
+// notifies Apollo IMMEDIATELY (drops the connection on the Deck right
+// away, there's no prep-cmd at all on Apollo to wait for) and only then
+// restores the screen, in the background, without blocking this step.
+// Extracted as a separate function (not just an inline loop) so a
+// single pass can be tested without needing real sleeps/timing in the
+// test.
 //
-// Se o Apollo responder com erro (ex: credenciais erradas, ou host fora
-// do ar momentaneamente) na etapa final de close, a sessao fica
-// registrada e a proxima passada tenta de novo - nao desiste depois de N
-// tentativas. Aceitavel pro escopo atual (LAN domestica, sem tentativas
-// maliciosas de esgotar login); se algum dia virar problema real,
-// adicionar um limite aqui. Repetir so' a etapa de close (nao os
-// restore_commands de novo) evita rodar kscreen-doctor duas vezes por
-// causa de uma falha momentanea so' na parte do Apollo.
+// If Apollo responds with an error (e.g. wrong credentials, or the host
+// being momentarily down) at the final close step, the session stays
+// registered and the next pass tries again, it doesn't give up after N
+// attempts. Acceptable for the current scope (home LAN, no malicious
+// login-exhaustion attempts); if this ever becomes a real problem, add
+// a limit here. Retrying only the close step (not the restore_commands
+// again) avoids running kscreen-doctor twice because of a momentary
+// failure only on Apollo's end.
 pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str, notifier: &EventNotifier) -> bool {
     let session = state.lock().await.clone();
 
@@ -245,7 +253,7 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
 
     let running = is_app_id_running(&session.app_id);
     println!(
-        "[{}] [session] watchdog: checando app_id={}, rodando={running}, confirmado_antes={}",
+        "[{}] [session] watchdog: checking app_id={}, running={running}, previously_confirmed={}",
         timestamp(),
         session.app_id,
         session.confirmed_running
@@ -253,9 +261,9 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
 
     if running {
         if !session.confirmed_running {
-            // primeira vez que vemos o processo de verdade - marca antes
-            // de sair, pra proxima passada ja saber que uma queda agora
-            // e' fechamento de verdade, nao so' o jogo ainda carregando.
+            // first time we've actually seen the process - mark it
+            // before returning, so the next pass already knows that a
+            // drop now is a real close, not just the game still loading.
             if let Some(s) = state.lock().await.as_mut() {
                 s.confirmed_running = true;
             }
@@ -264,16 +272,17 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
     }
 
     if !session.confirmed_running {
-        // Bug real encontrado no device: a primeira checagem do watchdog
-        // pode acontecer ANTES do jogo terminar de abrir (Steam demora um
-        // tempo variavel pra spawnar o processo com "AppId=" no cmdline -
-        // Proton, shader cache, etc). Sem essa checagem, "ainda nao
-        // apareceu" e "ja fechou" ficam indistinguiveis - o watchdog
-        // fechava (e desfazia a tela) um jogo que estava so' carregando.
-        // So' considera "fechou" depois de ter visto rodando de verdade
-        // pelo menos uma vez.
+        // Real bug found on-device: the watchdog's first check can
+        // happen BEFORE the game finishes opening (Steam takes a
+        // variable amount of time to spawn the process with "AppId=" in
+        // its cmdline, Proton, shader cache, etc). Without this check,
+        // "hasn't shown up yet" and "already closed" are
+        // indistinguishable, the watchdog would close (and tear down
+        // the screen for) a game that was just loading. Only considers
+        // it "closed" after having seen it actually running at least
+        // once.
         println!(
-            "[{}] [session] watchdog: app_id={} ainda nao foi visto rodando (jogo carregando?) - nao fecha ainda",
+            "[{}] [session] watchdog: app_id={} has not been seen running yet (game loading?), not closing yet",
             timestamp(),
             session.app_id
         );
@@ -281,19 +290,20 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
     }
 
     println!(
-        "[{}] [session] watchdog: app_id={} nao esta mais rodando, avisando o Apollo agora (restauro roda depois, em background)",
+        "[{}] [session] watchdog: app_id={} is no longer running, notifying Apollo now (restore runs afterwards, in the background)",
         timestamp(),
         session.app_id
     );
 
     match apollo::close_session_at(base_url, &session.username, &session.password).await {
         Ok(()) => {
-            println!("[{}] [session] watchdog: Apollo fechou a sessao com sucesso", timestamp());
+            println!("[{}] [session] watchdog: Apollo closed the session successfully", timestamp());
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
 
-            // O Deck ja recebeu a desconexao - restaurar a tela nao
-            // precisa bloquear isso, roda independente em background.
+            // The Deck has already received the disconnect - restoring
+            // the screen doesn't need to block this, it runs
+            // independently in the background.
             let restore_commands = session.restore_commands.clone();
             tokio::spawn(async move {
                 run_shell_commands(&restore_commands).await;
@@ -303,7 +313,7 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
         }
         Err(error) => {
             println!(
-                "[{}] [session] watchdog: Apollo falhou ao fechar ({error}) - tenta de novo no proximo tick",
+                "[{}] [session] watchdog: Apollo failed to close ({error}), trying again next tick",
                 timestamp()
             );
             false

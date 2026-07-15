@@ -1,19 +1,19 @@
-// Cliente minimo pra API REST do Apollo, usado so' pelo fechamento de
-// sessao (ver session.rs) - o Runner roda no MESMO host que o Apollo,
-// entao fala com ele via loopback, sem precisar do endereco LAN que o
-// Deck usa.
+// Minimal client for Apollo's REST API, used only by session closing
+// (see session.rs) - the Runner runs on the SAME host as Apollo, so it
+// talks to it via loopback, without needing the LAN address the Deck
+// uses.
 //
-// Mesmo comportamento que moonprofile_core.py:ApolloClient (Python, usado
-// por runner.py/main.py): login por cookie de sessao (POST /api/login,
-// nao HTTP Basic Auth - este fork nao segue o que a doc antiga do
-// Sunshine descreve). O Apollo NAO tem prep-cmd configurado (decisao
-// explicita - ver session.rs/moonprofile_core.py:build_display_commands)
-// - POST /api/apps/close so' derruba a conexao/stream em si, matar o
-// jogo e trocar a tela e' 100% responsabilidade do Runner.
+// Same behavior as moonprofile_core.py:ApolloClient (Python, used
+// by runner.py/main.py): login via session cookie (POST /api/login,
+// not HTTP Basic Auth - this fork doesn't follow what the old Sunshine
+// docs describe). Apollo does NOT have prep-cmd configured (explicit
+// decision, see session.rs/moonprofile_core.py:build_display_commands)
+// - POST /api/apps/close only drops the connection/stream itself, killing
+// the game and switching the screen is 100% the Runner's responsibility.
 //
-// Certificado autoassinado do Apollo - aceita certificado invalido de
-// proposito (danger_accept_invalid_certs), igual o Python faz com
-// ssl.CERT_NONE.
+// Apollo's self-signed certificate: accepts an invalid certificate on
+// purpose (danger_accept_invalid_certs), just like the Python code does
+// with ssl.CERT_NONE.
 
 use reqwest::{Client, StatusCode};
 use serde_json::json;
@@ -22,10 +22,10 @@ pub const DEFAULT_APOLLO_BASE_URL: &str = "https://127.0.0.1:47990";
 
 fn build_client() -> Result<Client, String> {
     Client::builder()
-        .cookie_store(true) // guarda o cookie "auth" devolvido pelo /api/login
+        .cookie_store(true) // stores the "auth" cookie returned by /api/login
         .danger_accept_invalid_certs(true)
         .build()
-        .map_err(|e| format!("Falha ao construir cliente HTTP pro Apollo: {e}"))
+        .map_err(|e| format!("Failed to build HTTP client for Apollo: {e}"))
 }
 
 fn classify_status(status: StatusCode) -> Result<(), String> {
@@ -33,13 +33,13 @@ fn classify_status(status: StatusCode) -> Result<(), String> {
         return Ok(());
     }
     if status == StatusCode::UNAUTHORIZED {
-        return Err("Usuario ou senha do Apollo incorretos".to_string());
+        return Err("Incorrect Apollo username or password".to_string());
     }
-    Err(format!("Apollo respondeu com erro inesperado (HTTP {})", status.as_u16()))
+    Err(format!("Apollo responded with an unexpected error (HTTP {})", status.as_u16()))
 }
 
 fn unreachable_message(base_url: &str) -> String {
-    format!("Nao consegui alcancar o Apollo em {base_url} - confira se o host esta ligado")
+    format!("Could not reach Apollo at {base_url} - check whether the host is powered on")
 }
 
 async fn login(client: &Client, base_url: &str, username: &str, password: &str) -> Result<(), String> {
@@ -52,9 +52,9 @@ async fn login(client: &Client, base_url: &str, username: &str, password: &str) 
     classify_status(resp.status())
 }
 
-// base_url e' parametro (em vez de sempre DEFAULT_APOLLO_BASE_URL) pra
-// permitir apontar pra um wiremock::MockServer nos testes, mesmo padrao
-// ja usado em games.rs (STEAM_STORE_BASE_URL).
+// base_url is a parameter (instead of always DEFAULT_APOLLO_BASE_URL) to
+// allow pointing at a wiremock::MockServer in tests, same pattern
+// already used in games.rs (STEAM_STORE_BASE_URL).
 pub async fn close_session_at(base_url: &str, username: &str, password: &str) -> Result<(), String> {
     let client = build_client()?;
     login(&client, base_url, username, password).await?;
@@ -70,10 +70,10 @@ pub async fn close_session_at(base_url: &str, username: &str, password: &str) ->
     Ok(())
 }
 
-// Testes fisicamente separados (src/tests/apollo.rs) - continuam parte
-// do modulo `apollo` (o #[path] so' muda ONDE o arquivo mora, nao a
-// posicao na arvore de modulos), entao `super::*` ali ainda enxerga tudo
-// que e' privado aqui, igual antes.
+// Tests physically separated (src/tests/apollo.rs) - still part of the
+// `apollo` module (the #[path] attribute only changes WHERE the file
+// lives, not its position in the module tree), so `super::*` there
+// still sees everything private here, same as before.
 #[cfg(test)]
 #[path = "tests/apollo.rs"]
 mod tests;

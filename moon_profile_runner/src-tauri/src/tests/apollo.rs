@@ -32,7 +32,7 @@ async fn reports_wrong_credentials_on_401_from_login() {
 
     let result = close_session_at(&mock_server.uri(), "user", "wrong").await;
 
-    assert_eq!(result, Err("Usuario ou senha do Apollo incorretos".to_string()));
+    assert_eq!(result, Err("Incorrect Apollo username or password".to_string()));
 }
 
 #[tokio::test]
@@ -51,17 +51,17 @@ async fn reports_unexpected_status_from_close() {
 
     let result = close_session_at(&mock_server.uri(), "user", "pass").await;
 
-    assert_eq!(result, Err("Apollo respondeu com erro inesperado (HTTP 500)".to_string()));
+    assert_eq!(result, Err("Apollo responded with an unexpected error (HTTP 500)".to_string()));
 }
 
 #[tokio::test]
 async fn reports_unreachable_host_when_connection_fails() {
-    // porta 0 nunca aceita conexao - simula o Apollo desligado/
-    // inalcancavel sem depender de timeout longo.
+    // port 0 never accepts a connection - simulates Apollo being
+    // powered off/unreachable without relying on a long timeout.
     let result = close_session_at("http://127.0.0.1:0", "user", "pass").await;
 
     assert_eq!(
         result,
-        Err("Nao consegui alcancar o Apollo em http://127.0.0.1:0 - confira se o host esta ligado".to_string())
+        Err("Could not reach Apollo at http://127.0.0.1:0 - check whether the host is powered on".to_string())
     );
 }

@@ -1,8 +1,8 @@
-// Lista os monitores/outputs de tela do host (via kscreen-doctor -j) pra
-// alimentar o Deck com opcoes de verdade em vez do usuario ter que
-// digitar o nome do output ("HDMI-A-1", "DP-3", etc) na mao - a UI usa
-// isso pra popular um <select> pro target_output e uma lista dinamica
-// pro disable_outputs (ver src/api.ts/ProfileEditor no lado Decky).
+// Lists the host's monitors/screen outputs (via kscreen-doctor -j) to
+// give the Deck real options instead of the user having to type the
+// output name ("HDMI-A-1", "DP-3", etc) by hand - the UI uses this to
+// populate a <select> for target_output and a dynamic list for
+// disable_outputs (see src/api.ts/ProfileEditor on the Decky side).
 
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +13,8 @@ pub struct HostDisplay {
     pub enabled: bool,
 }
 
-// So' os campos que nos interessam do JSON completo do kscreen-doctor -
-// serde ignora o resto (modes, icc profile, etc) automaticamente.
+// Only the fields we care about from kscreen-doctor's full JSON - serde
+// ignores the rest (modes, icc profile, etc) automatically.
 #[derive(Deserialize)]
 struct KscreenOutput {
     name: String,
@@ -27,10 +27,10 @@ struct KscreenConfig {
     outputs: Vec<KscreenOutput>,
 }
 
-// Pura - parseia o JSON que kscreen-doctor -j imprime. Separada da
-// chamada de processo de verdade pra poder testar contra fixtures reais
-// (capturadas do device) sem depender do kscreen-doctor estar instalado
-// na maquina rodando o teste.
+// Pure - parses the JSON that kscreen-doctor -j prints. Kept separate
+// from the actual process call so it can be tested against real
+// fixtures (captured from the device) without depending on
+// kscreen-doctor being installed on the machine running the test.
 fn parse_kscreen_json(raw: &str) -> Vec<HostDisplay> {
     let Ok(config) = serde_json::from_str::<KscreenConfig>(raw) else {
         return Vec::new();
@@ -42,10 +42,11 @@ fn parse_kscreen_json(raw: &str) -> Vec<HostDisplay> {
         .collect()
 }
 
-// Fail-open (lista vazia) se o kscreen-doctor nao existir, falhar, ou
-// devolver algo inesperado - mesma filosofia do resto do projeto (ex:
-// filter_to_games_only em games.rs): melhor a UI mostrar uma lista vazia
-// (usuario ainda pode digitar manualmente como fallback) do que travar.
+// Fail-open (empty list) if kscreen-doctor doesn't exist, fails, or
+// returns something unexpected - same philosophy as the rest of the
+// project (e.g. filter_to_games_only in games.rs): better for the UI to
+// show an empty list (the user can still type manually as a fallback)
+// than to hang.
 pub fn list_displays() -> Vec<HostDisplay> {
     let Ok(output) = std::process::Command::new("kscreen-doctor").arg("-j").output() else {
         return Vec::new();

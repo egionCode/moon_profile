@@ -1,8 +1,8 @@
 use super::*;
 
-// Fixture reduzida, capturada de verdade rodando "kscreen-doctor -j"
-// no device (so' os campos que import, "modes" comprimido) - evita
-// depender do kscreen-doctor estar instalado pra testar o parsing.
+// Reduced fixture, actually captured by running "kscreen-doctor -j"
+// on the device (only the fields that matter, "modes" trimmed down) -
+// avoids depending on kscreen-doctor being installed to test parsing.
 const FIXTURE: &str = r#"{
     "features": 255,
     "outputs": [
@@ -28,7 +28,7 @@ fn parses_name_connected_and_enabled_for_each_output() {
 
 #[test]
 fn returns_empty_on_malformed_json() {
-    assert_eq!(parse_kscreen_json("nao e' json"), Vec::new());
+    assert_eq!(parse_kscreen_json("this is not json"), Vec::new());
 }
 
 #[test]

@@ -1,10 +1,12 @@
-// Enumera os jogos Steam instalados no host, pro Deck criar um atalho por
-// jogo automaticamente (ver docs/prd.md, secao dos atalhos por jogo -
-// Estagio A: so' jogos Steam reais, non-Steam fica pro Estagio B).
+// Enumerates the Steam games installed on the host, so the Deck can
+// automatically create a shortcut per game (see docs/prd.md, per-game
+// shortcuts section - Stage A: only real Steam games, non-Steam is
+// Stage B).
 //
-// Formato dos arquivos: VDF/KeyValues texto da Valve (mesmo formato de
-// `libraryfolders.vdf` e `appmanifest_<id>.acf`) - usamos keyvalues-serde
-// (Serde por cima do keyvalues-parser) em vez de escrever um parser na mao.
+// File format: Valve's text VDF/KeyValues format (same format as
+// `libraryfolders.vdf` and `appmanifest_<id>.acf`) - we use
+// keyvalues-serde (Serde on top of keyvalues-parser) instead of writing
+// a parser by hand.
 
 use keyvalues_serde::from_str;
 use serde::{Deserialize, Serialize};
@@ -21,9 +23,9 @@ pub struct HostGame {
     pub is_steam: bool,
 }
 
-// "libraryfolders" no topo do VDF envolve um objeto cujas chaves sao so'
-// indices ("0", "1", ...) - HashMap<String, _> cobre isso sem precisar
-// saber quantas bibliotecas existem de antemao.
+// The top-level "libraryfolders" in the VDF wraps an object whose keys
+// are just indices ("0", "1", ...) - HashMap<String, _> covers this
+// without needing to know how many libraries exist upfront.
 #[derive(Deserialize)]
 struct LibraryFolders(HashMap<String, LibraryFolderEntry>);
 
@@ -32,9 +34,9 @@ struct LibraryFolderEntry {
     path: String,
 }
 
-// "AppState" no topo do .acf envolve soh os campos do proprio app - os
-// campos extras do arquivo real (StateFlags, LastUpdated, etc) sao
-// ignorados pelo serde automaticamente, nao precisa listar todos.
+// The top-level "AppState" in the .acf wraps only the fields of the app
+// itself - the extra fields in the real file (StateFlags, LastUpdated,
+// etc) are ignored by serde automatically, no need to list them all.
 #[derive(Deserialize)]
 struct AppManifest {
     appid: String,
@@ -53,12 +55,13 @@ fn parse_library_paths(vdf_content: &str) -> Vec<PathBuf> {
     }
 }
 
-// appmanifest_*.acf tambem existe pras ferramentas/runtimes que a Valve
-// instala junto (Proton, Steam Linux Runtime, redistributables) - nao sao
-// jogos, criar atalho pra eles seria um "jogo" chamado "Proton 9.0" na
-// biblioteca. Nao ha' campo local confiavel que distinga isso (teria que
-// consultar a Steam Web API) - filtro pratico por nome, que a Valve usa de
-// forma consistente pra essas entradas.
+// appmanifest_*.acf also exists for the tools/runtimes Valve installs
+// alongside games (Proton, Steam Linux Runtime, redistributables) -
+// they aren't games, creating a shortcut for them would produce a
+// "game" called "Proton 9.0" in the library. There's no reliable local
+// field to tell them apart (you'd have to query the Steam Web API) - a
+// practical name-based filter, which Valve uses consistently for these
+// entries.
 fn is_valve_tooling(name: &str) -> bool {
     name.starts_with("Proton ")
         || name == "Steamworks Common Redistributables"
@@ -84,9 +87,9 @@ fn is_app_manifest_filename(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-// Recebe o caminho raiz da instalacao Steam do host (ex:
-// ~/.local/share/Steam) pra poder ser testado com uma fixture, em vez de
-// depender sempre do Steam de verdade instalado na maquina.
+// Takes the host's Steam install root path (e.g. ~/.local/share/Steam)
+// so it can be tested with a fixture, instead of always depending on a
+// real Steam installation on the machine.
 pub fn list_steam_games(steam_root: &Path) -> Vec<HostGame> {
     let library_folders_path = steam_root.join("steamapps").join("libraryfolders.vdf");
     let Ok(content) = fs::read_to_string(&library_folders_path) else {
@@ -114,19 +117,20 @@ pub fn list_steam_games(steam_root: &Path) -> Vec<HostGame> {
     games
 }
 
-// appmanifest_*.acf nao tem campo de categoria - "Aseprite", "Blender" etc
-// (software real vendido na Steam, nao ferramenta interna da Valve) passam
-// pelo filtro de nome do is_valve_tooling sem problema, porque nao sao
-// Proton/redistributable. So' a API publica da Steam (appdetails) tem o
-// dado real que falta - mas NAO e' o campo "type": validado direto contra
-// a API de verdade que a Steam classifica Aseprite E Blender como
-// type=="game" tambem (a Store nao tem um tipo dedicado pra "software",
-// so' Jogos vs DLC vs demo etc - "type" nao distingue o que queremos).
-// O sinal que de fato funciona e' "categories": todo jogo de verdade tem
-// pelo menos um modo de jogo (Single-player/Multi-player/Co-op/PvP/...),
-// ferramentas nunca tem (confirmado contra a API real: Aseprite/Blender
-// sem "categories" nenhuma, SteamVR com categorias mas nenhuma de
-// gameplay, contra Dota 2/No Man's Sky/Resident Evil 4 que sempre tem).
+// appmanifest_*.acf has no category field - "Aseprite", "Blender" etc
+// (real software sold on Steam, not an internal Valve tool) pass through
+// is_valve_tooling's name filter without issue, because they aren't
+// Proton/redistributables. Only Steam's public API (appdetails) has the
+// real data that's missing - but it's NOT the "type" field: validated
+// directly against the real API that Steam classifies both Aseprite and
+// Blender as type=="game" too (the Store has no dedicated type for
+// "software", only Game vs DLC vs demo etc - "type" doesn't distinguish
+// what we want). The signal that actually works is "categories": every
+// real game has at least one game mode (Single-player/Multi-player/
+// Co-op/PvP/...), tools never do (confirmed against the real API:
+// Aseprite/Blender have no "categories" at all, SteamVR has categories
+// but none of them gameplay, versus Dota 2/No Man's Sky/Resident Evil 4
+// which always have one).
 #[derive(Deserialize)]
 struct AppDetailsEntry {
     success: bool,
@@ -143,12 +147,12 @@ struct Category {
     id: u32,
 }
 
-// IDs fixos do catalogo de categorias da Steam (estaveis ha' anos,
-// confirmados contra a API real): 1=Multi-player, 2=Single-player,
-// 9=Co-op, 20=MMO, 24=Shared/Split Screen, 27=Cross-Platform
-// Multiplayer, 36=Online PvP, 38=Online Co-op, 47=LAN PvP, 48=LAN Co-op,
-// 49=PvP. Qualquer um desses presente e' o sinal de "isso e' jogado", nao
-// so' usado.
+// Fixed IDs from Steam's category catalog (stable for years, confirmed
+// against the real API): 1=Multi-player, 2=Single-player, 9=Co-op,
+// 20=MMO, 24=Shared/Split Screen, 27=Cross-Platform Multiplayer,
+// 36=Online PvP, 38=Online Co-op, 47=LAN PvP, 48=LAN Co-op, 49=PvP. Any
+// of these being present is the signal that "this is played", not just
+// used.
 const GAMEPLAY_CATEGORY_IDS: &[u32] = &[1, 2, 9, 20, 24, 27, 36, 38, 47, 48, 49];
 
 fn has_gameplay_category(categories: &Option<Vec<Category>>) -> bool {
@@ -158,10 +162,10 @@ fn has_gameplay_category(categories: &Option<Vec<Category>>) -> bool {
         .unwrap_or(false)
 }
 
-// None = nao deu pra descobrir (erro de rede, resposta inesperada, app
-// nao encontrado) - o chamador decide o que fazer (fail-open: mantem o
-// jogo na duvida, ver filter_to_games_only). Some(bool) = consulta deu
-// certo, resultado da classificacao de verdade.
+// None = couldn't tell (network error, unexpected response, app not
+// found) - the caller decides what to do (fail-open: keeps the game
+// when in doubt, see filter_to_games_only). Some(bool) = the query
+// succeeded, real classification result.
 async fn is_actual_game(client: &reqwest::Client, base_url: &str, app_id: &str) -> Option<bool> {
     let url = format!("{base_url}/api/appdetails?appids={app_id}&filters=basic,categories");
     let response = client.get(&url).send().await.ok()?;
@@ -173,12 +177,12 @@ async fn is_actual_game(client: &reqwest::Client, base_url: &str, app_id: &str) 
     Some(has_gameplay_category(&entry.data.as_ref()?.categories))
 }
 
-// Consulta cada candidato concorrentemente (nao um por vez - seria lento
-// pra uma biblioteca com dezenas de jogos) e mantem so' os que tem
-// categoria de gameplay. Fail-open: se a consulta falhar (rede fora,
-// timeout, resposta inesperada) o jogo fica na lista mesmo assim - melhor
-// mostrar um software errado ocasional do que esconder um jogo de verdade
-// por causa de um problema de rede passageiro.
+// Queries each candidate concurrently (not one at a time - that would be
+// slow for a library with dozens of games) and keeps only the ones with
+// a gameplay category. Fail-open: if the query fails (network down,
+// timeout, unexpected response) the game stays in the list anyway -
+// better to occasionally show a piece of software by mistake than to
+// hide a real game because of a transient network issue.
 async fn filter_to_games_only(candidates: Vec<HostGame>, base_url: &str) -> Vec<HostGame> {
     let client = reqwest::Client::new();
     let mut tasks = tokio::task::JoinSet::new();

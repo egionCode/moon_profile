@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=MoonProfile Runner
-Comment=Daemon local do MoonProfile - detecta fim de sessao de streaming
+Comment=MoonProfile local daemon - detects the end of streaming sessions
 Exec=__EXEC_PATH__
 Icon=utilities-terminal
 Terminal=false
