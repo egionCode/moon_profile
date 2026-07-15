@@ -22,9 +22,17 @@
 //
 // "Fechar conexao" manual (QuickAccessContent.tsx -> POST /session/close)
 // mata o jogo (se ainda estiver vivo, com SIGTERM + espera adaptativa +
-// SIGKILL se preciso) antes de restaurar a tela e avisar o Apollo -
-// diferente do watchdog, que so' age depois de confirmar que o processo
-// ja morreu sozinho.
+// SIGKILL se preciso) e restaura a tela - diferente do watchdog, que so'
+// age depois de confirmar que o processo ja morreu sozinho.
+//
+// ORDEM importa pra experiencia do usuario: em AMBOS os fluxos, o Apollo
+// e' avisado (o que derruba o stream/desconecta o Moonlight no Deck,
+// tirando a tela de streaming) ANTES de matar o jogo/restaurar a tela -
+// nao depois. Kill do jogo (que pode levar ate' 20s de periodo de graca
+// no fechamento manual) e os comandos de restauracao rodam DEPOIS, em
+// background (tokio::spawn, sem bloquear a resposta) - o usuario ve o
+// Deck sair da tela de streaming na hora, o resto acontece independente
+// no host, sem ele esperando.
 
 use axum::extract::Extension;
 use axum::Json;
@@ -162,10 +170,11 @@ pub async fn register_session(
     Json(CloseResponse { ok: true, error: None })
 }
 
-// Fechamento IMEDIATO (manual, "Fechar conexao") - mata o jogo se ainda
-// estiver vivo (SIGTERM + espera adaptativa + SIGKILL, ver
-// kill_game_process), restaura a tela, e so' entao avisa o Apollo pra
-// derrubar a conexao.
+// Fechamento IMEDIATO (manual, "Fechar conexao") - avisa o Apollo PRIMEIRO
+// (derruba a conexao/stream no Deck na hora) e so' depois mata o jogo (se
+// ainda estiver vivo - SIGTERM + espera adaptativa + SIGKILL, ver
+// kill_game_process) e restaura a tela, em background, sem bloquear a
+// resposta.
 pub async fn close_session_now(
     Extension(state): Extension<SessionState>,
     Extension(ApolloBaseUrl(base_url)): Extension<ApolloBaseUrl>,
@@ -181,15 +190,26 @@ pub async fn close_session_now(
         });
     };
 
-    println!("[{}] [session] fechamento manual pedido - matando o jogo (se vivo) e restaurando a tela", timestamp());
-    kill_game_process(&session.app_id).await;
-    run_shell_commands(&session.restore_commands).await;
-
+    println!(
+        "[{}] [session] fechamento manual pedido - avisando o Apollo agora (kill/restauro rodam depois, em background)",
+        timestamp()
+    );
     match apollo::close_session_at(&base_url, &session.username, &session.password).await {
         Ok(()) => {
             println!("[{}] [session] Apollo fechou a sessao com sucesso (fechamento manual)", timestamp());
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
+
+            // O Deck ja recebeu a confirmacao (o stream ja foi
+            // derrubado) - matar o jogo (se ainda vivo) e restaurar a
+            // tela nao precisam bloquear essa resposta.
+            let app_id = session.app_id.clone();
+            let restore_commands = session.restore_commands.clone();
+            tokio::spawn(async move {
+                kill_game_process(&app_id).await;
+                run_shell_commands(&restore_commands).await;
+            });
+
             Json(CloseResponse { ok: true, error: None })
         }
         Err(error) => {
@@ -201,11 +221,11 @@ pub async fn close_session_now(
 
 // Roda pra sempre numa task em background (ver lib.rs) - a cada
 // intervalo, checa se a sessao registrada ainda esta rodando de verdade
-// (sysinfo, o SO nao mente mesmo quando o Apollo mente). Se morreu,
-// restaura a tela e avisa o Apollo - fechamento em ~1s, ja que nao ha'
-// processo pra matar (o watchdog so' age DEPOIS de confirmar a morte) nem
-// prep-cmd nenhum no Apollo pra esperar. Extraida como funcao separada
-// (nao so' o loop inline) pra poder testar UMA passada sem precisar de
+// (sysinfo, o SO nao mente mesmo quando o Apollo mente). Se morreu, avisa
+// o Apollo IMEDIATAMENTE (derruba a conexao no Deck na hora - nao ha'
+// prep-cmd nenhum no Apollo pra esperar) e so' depois restaura a tela, em
+// background, sem bloquear essa etapa. Extraida como funcao separada (nao
+// so' o loop inline) pra poder testar UMA passada sem precisar de
 // sleep/timing de verdade no teste.
 //
 // Se o Apollo responder com erro (ex: credenciais erradas, ou host fora
@@ -261,17 +281,24 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
     }
 
     println!(
-        "[{}] [session] watchdog: app_id={} nao esta mais rodando, restaurando a tela e fechando no Apollo",
+        "[{}] [session] watchdog: app_id={} nao esta mais rodando, avisando o Apollo agora (restauro roda depois, em background)",
         timestamp(),
         session.app_id
     );
-    run_shell_commands(&session.restore_commands).await;
 
     match apollo::close_session_at(base_url, &session.username, &session.password).await {
         Ok(()) => {
             println!("[{}] [session] watchdog: Apollo fechou a sessao com sucesso", timestamp());
             *state.lock().await = None;
             let _ = notifier.send(RunnerEvent::SessionClosed);
+
+            // O Deck ja recebeu a desconexao - restaurar a tela nao
+            // precisa bloquear isso, roda independente em background.
+            let restore_commands = session.restore_commands.clone();
+            tokio::spawn(async move {
+                run_shell_commands(&restore_commands).await;
+            });
+
             true
         }
         Err(error) => {
@@ -460,6 +487,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn closes_via_apollo_before_restore_commands_finish_running() {
+        // Prova a ordem nova no watchdog: o Apollo e' avisado (a funcao
+        // retorna "closed") ANTES dos restore_commands terminarem de
+        // rodar - eles seguem em background (tokio::spawn), sem atrasar
+        // a desconexao do Deck.
+        let marker_file = tempfile::NamedTempFile::new().unwrap();
+        let marker_path = marker_file.path().to_str().unwrap().to_string();
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/login"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/apps/close"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let state = empty_state();
+        *state.lock().await = Some(ActiveSession {
+            app_id: "900019".to_string(), // nenhum processo - "ja fechou"
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            restore_commands: vec![format!("sleep 0.3 && echo restaurado > {marker_path}")],
+            confirmed_running: true,
+        });
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let closed = check_and_maybe_close_session(&state, &mock_server.uri(), &tx).await;
+
+        assert!(closed);
+        // logo apos retornar, o comando (que tem um sleep de 0.3s
+        // embutido) ainda nao deveria ter terminado - prova que ele roda
+        // DEPOIS, em background, nao antes de considerar a sessao fechada.
+        assert!(std::fs::read_to_string(&marker_path).unwrap().is_empty());
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            if !std::fs::read_to_string(&marker_path).unwrap().is_empty() {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "restore_commands nao rodou a tempo em background");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[tokio::test]
     async fn keeps_the_session_registered_when_apollo_call_fails() {
         // credenciais erradas (ou Apollo fora do ar) - tenta de novo no
         // proximo tick em vez de desistir e perder a sessao.
@@ -556,11 +632,66 @@ mod tests {
         assert!(response.0.ok);
         assert!(state.lock().await.is_none());
         assert_eq!(rx.try_recv(), Ok(RunnerEvent::SessionClosed));
-        // pkill -TERM (mandado por kill_game_process) deve ter derrubado
-        // o processo fake de verdade - confirma comportamento real, nao
-        // so' que a funcao retornou sem erro.
-        assert!(!is_app_id_running("900013"));
+
+        // kill_game_process roda em BACKGROUND agora (tokio::spawn, nao
+        // bloqueia a resposta acima) - poll com timeout em vez de checar
+        // na hora, senao da' corrida com a task spawnada.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while is_app_id_running("900013") {
+            assert!(tokio::time::Instant::now() < deadline, "processo fake nao morreu a tempo");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         drop(fake);
+    }
+
+    #[tokio::test]
+    async fn close_session_now_returns_before_the_kill_grace_period_would_finish() {
+        // Prova a ordem nova: o Apollo e' avisado (e a resposta volta)
+        // ANTES do kill/restauro terminarem - nao depois. Processo que
+        // ignora SIGTERM (so' morre com SIGKILL) - se close_session_now
+        // esperasse o periodo de graca inteiro (20s) antes de responder,
+        // esse teste estouraria o timeout abaixo.
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/login"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/apps/close"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let app_id = "900018";
+        let marker = format!("AppId={app_id}");
+        let mut fake = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!(r#"trap "" TERM; exec -a "{marker}" sleep 30"#))
+            .spawn()
+            .expect("falha ao spawnar processo fake pro teste");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let state = empty_state();
+        *state.lock().await = Some(plain_session(app_id, "user", "pass"));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let start = tokio::time::Instant::now();
+        let response = close_session_now(
+            Extension(state),
+            Extension(ApolloBaseUrl(mock_server.uri())),
+            Extension(tx),
+        )
+        .await;
+
+        assert!(response.0.ok);
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "close_session_now nao deveria esperar o periodo de graca do kill"
+        );
+
+        let _ = fake.kill(); // SIGKILL de verdade - limpeza, o trap so' ignora TERM
+        let _ = fake.wait();
     }
 
     #[tokio::test]
