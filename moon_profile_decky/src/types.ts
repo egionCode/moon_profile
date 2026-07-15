@@ -13,6 +13,11 @@ export interface HostConfig {
   hdr: boolean;
   wcg: boolean; // Wide Color Gamut
   disable_outputs: string[]; // ex: ["DP-3"]
+  // Manda o cursor pro canto inferior direito do output alvo no
+  // lancamento (via ydotool, ver build_display_commands em
+  // moonprofile_core.py) - alguns jogos (ex: FIFA) prendem o cursor no
+  // meio da tela do host mesmo jogando so' de controle.
+  move_cursor_to_corner?: boolean;
 }
 
 export interface Profile {

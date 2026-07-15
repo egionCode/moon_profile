@@ -80,6 +80,19 @@ def build_display_commands(host_cfg: dict) -> list:
         f"kscreen-doctor output.{target}.hdr.{hdr_state} output.{target}.wcg.{hdr_state}",
     ]
     commands.extend(f"kscreen-doctor output.{o}.disable" for o in disable_outputs)
+
+    if host_cfg.get("move_cursor_to_corner"):
+        # Alguns jogos (achado real: FIFA) prendem o cursor no meio da
+        # tela mesmo jogando so' de controle - manda ele pro canto
+        # inferior direito do output alvo (ydotool, unico jeito de mover
+        # o cursor no Wayland sem apoio do compositor - kwin nao deixa
+        # escrever workspace.cursorPos nessa versao do Plasma, confirmado
+        # rodando de verdade). Roda pelo Runner (Rust) igual o resto dos
+        # display_commands - "Rust controla tudo que mexe no host", ver
+        # AGENTS.md.
+        width, height = resolution.split("x")
+        commands.append(f"ydotool mousemove -a {int(width) - 1} {int(height) - 1}")
+
     return commands
 
 

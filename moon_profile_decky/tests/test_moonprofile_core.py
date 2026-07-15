@@ -79,6 +79,31 @@ class TestBuildDisplayCommands:
 
         assert commands[3:] == ["kscreen-doctor output.DP-2.disable", "kscreen-doctor output.DP-3.disable"]
 
+    def test_does_not_move_the_cursor_by_default(self):
+        host_cfg = {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": False, "disable_outputs": []}
+
+        commands = build_display_commands(host_cfg)
+
+        assert not any("ydotool" in c for c in commands)
+
+    def test_moves_the_cursor_to_the_bottom_right_corner_when_enabled(self):
+        # achado real: alguns jogos (FIFA) prendem o cursor no meio da
+        # tela mesmo jogando so' de controle - ydotool e' o unico jeito de
+        # mover o cursor no Wayland sem apoio do compositor (KWin nao
+        # deixa escrever workspace.cursorPos nessa versao do Plasma).
+        host_cfg = {
+            "target_output": "HDMI-A-1",
+            "resolution": "1920x1080",
+            "fps": 60,
+            "hdr": False,
+            "disable_outputs": [],
+            "move_cursor_to_corner": True,
+        }
+
+        commands = build_display_commands(host_cfg)
+
+        assert commands[-1] == "ydotool mousemove -a 1919 1079"
+
 
 class TestBuildRestoreCommands:
     def test_closes_big_picture_first_then_settles(self):

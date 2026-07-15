@@ -253,6 +253,13 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
             onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, wcg: checked } })}
           />
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Mandar cursor pro canto ao jogar"
+            checked={draft.host.move_cursor_to_corner ?? false}
+            onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, move_cursor_to_corner: checked } })}
+          />
+        </PanelSectionRow>
         {displays.length > 0 ? (
           // Lista dinamica - um toggle por monitor de verdade do host
           // (menos o que ja' esta' escolhido como output alvo, nao faz
