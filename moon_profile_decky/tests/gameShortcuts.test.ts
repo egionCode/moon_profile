@@ -26,36 +26,36 @@ describe("ensureGameShortcut", () => {
     (window as any).SteamClient.Apps.AddShortcut.mockResolvedValue(999);
     (window as any).appStore.GetAppOverviewByAppID.mockReturnValue(overviewOf(999));
 
-    const appId = await ensureGameShortcut(shortcuts, "123", "Meu Jogo", "/path/runner.py", true);
+    const appId = await ensureGameShortcut(shortcuts, "123", "My Game", "/path/runner.py", true);
 
     expect(appId).toBe(999);
-    expect((window as any).SteamClient.Apps.AddShortcut).toHaveBeenCalledWith("Meu Jogo", "/path/runner.py", "", "");
-    expect((window as any).SteamClient.Apps.SetShortcutName).toHaveBeenCalledWith(999, "Meu Jogo");
+    expect((window as any).SteamClient.Apps.AddShortcut).toHaveBeenCalledWith("My Game", "/path/runner.py", "", "");
+    expect((window as any).SteamClient.Apps.SetShortcutName).toHaveBeenCalledWith(999, "My Game");
     expect((window as any).SteamClient.Apps.SetAppLaunchOptions).toHaveBeenCalledWith(
       999,
       "MOONPROFILE_HOST_APP_ID=123 %command%",
     );
-    expect(shortcuts["123"]).toEqual({ deck_app_id: 999, name: "Meu Jogo", is_steam: true });
+    expect(shortcuts["123"]).toEqual({ deck_app_id: 999, name: "My Game", is_steam: true });
   });
 
   it("reuses the tracked shortcut when it still exists in the library", async () => {
-    const shortcuts: GameShortcuts = { "123": { deck_app_id: 999, name: "Meu Jogo", is_steam: true } };
+    const shortcuts: GameShortcuts = { "123": { deck_app_id: 999, name: "My Game", is_steam: true } };
     (window as any).appStore.GetAppOverviewByAppID.mockReturnValue(overviewOf(999));
 
-    const appId = await ensureGameShortcut(shortcuts, "123", "Meu Jogo", "/path/runner.py", true);
+    const appId = await ensureGameShortcut(shortcuts, "123", "My Game", "/path/runner.py", true);
 
     expect(appId).toBe(999);
     expect((window as any).SteamClient.Apps.AddShortcut).not.toHaveBeenCalled();
   });
 
   it("recreates the shortcut if the tracked one was removed from the library", async () => {
-    const shortcuts: GameShortcuts = { "123": { deck_app_id: 999, name: "Meu Jogo", is_steam: true } };
+    const shortcuts: GameShortcuts = { "123": { deck_app_id: 999, name: "My Game", is_steam: true } };
     (window as any).appStore.GetAppOverviewByAppID
-      .mockReturnValueOnce(null) // checagem da entrada existente: sumiu
-      .mockReturnValue(overviewOf(1000)); // depois de recriar, aparece com o novo id
+      .mockReturnValueOnce(null) // check of the existing entry: it disappeared
+      .mockReturnValue(overviewOf(1000)); // after recreating, it shows up with the new id
     (window as any).SteamClient.Apps.AddShortcut.mockResolvedValue(1000);
 
-    const appId = await ensureGameShortcut(shortcuts, "123", "Meu Jogo", "/path/runner.py", true);
+    const appId = await ensureGameShortcut(shortcuts, "123", "My Game", "/path/runner.py", true);
 
     expect(appId).toBe(1000);
     expect((window as any).SteamClient.Apps.AddShortcut).toHaveBeenCalledTimes(1);
@@ -66,7 +66,7 @@ describe("ensureGameShortcut", () => {
     const shortcuts: GameShortcuts = {};
     (window as any).SteamClient.Apps.AddShortcut.mockResolvedValue(undefined);
 
-    const appId = await ensureGameShortcut(shortcuts, "123", "Meu Jogo", "/path/runner.py", true);
+    const appId = await ensureGameShortcut(shortcuts, "123", "My Game", "/path/runner.py", true);
 
     expect(appId).toBeNull();
     expect(shortcuts["123"]).toBeUndefined();
@@ -79,7 +79,7 @@ describe("ensureGameShortcut", () => {
       (window as any).SteamClient.Apps.AddShortcut.mockResolvedValue(999);
       (window as any).appStore.GetAppOverviewByAppID.mockReturnValue(null);
 
-      const resultPromise = ensureGameShortcut(shortcuts, "123", "Meu Jogo", "/path/runner.py", true);
+      const resultPromise = ensureGameShortcut(shortcuts, "123", "My Game", "/path/runner.py", true);
       await vi.advanceTimersByTimeAsync(20 * 250);
       const appId = await resultPromise;
 

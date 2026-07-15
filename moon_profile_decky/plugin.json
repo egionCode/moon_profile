@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["streaming", "moonlight", "apollo"],
-    "description": "Perfis de streaming Moonlight/Apollo com deteccao automatica de contexto docked/handheld.",
+    "description": "Moonlight/Apollo streaming profiles with automatic docked/handheld context detection.",
     "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
   }
 }

@@ -17,10 +17,10 @@ import { LogsSection } from "./LogsSection";
 import { getProfiles, saveProfiles, getConfig, saveConfig } from "./api";
 import { Config, Profile } from "./types";
 
-// @decky/ui so' tipa "children" pra esses dois (sao modulos mapeados via
-// webpack em tempo de execucao, sem .d.ts fiel) mas aceitam style/focusable
-// de verdade - mesmo par que a propria Steam usa pra scroll com navegacao
-// por gamepad.
+// @decky/ui only types "children" for these two (they're modules mapped
+// via webpack at runtime, without a faithful .d.ts) but they do accept a
+// real style/focusable, the same pair Steam itself uses for scrolling with
+// gamepad navigation.
 type ScrollProps = { children?: ReactNode; style?: CSSProperties; focusable?: boolean };
 const ScrollPanelGroup = ScrollPanelGroupUntyped as FC<ScrollProps>;
 const ScrollPanel = ScrollPanelUntyped as FC<ScrollProps>;
@@ -35,10 +35,11 @@ function blankProfile(): Profile {
   };
 }
 
-// Gera um id novo unico a partir do nome (slug) - usado tanto pro "Novo
-// perfil" quanto pro "Duplicar" (que precisa de um id diferente do original).
+// Generates a new unique id from the name (slug), used both for "New
+// profile" and for "Duplicate" (which needs an id different from the
+// original).
 function makeUniqueId(base: string, existingIds: string[]): string {
-  const slug = base.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "perfil";
+  const slug = base.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "profile";
   if (!existingIds.includes(slug)) {
     return slug;
   }
@@ -49,13 +50,12 @@ function makeUniqueId(base: string, existingIds: string[]): string {
   return `${slug}-${i}`;
 }
 
-// Pagina cheia de configuracoes, aberta via routerHook (ver index.tsx) a
-// partir do icone de engrenagem no Quick Access. Sidenav nativa da Steam
-// (SidebarNavigation) - Config do Apollo (default), Perfis, Runner, Jogos
-// e Logs. "config" e' dono daqui e passado pras abas que mexem nele
-// (Apollo/Runner), entao trocar de aba sem salvar nao perde edicao feita
-// na outra (mexem no MESMO objeto, salvo inteiro de uma vez so no
-// backend).
+// Full settings page, opened via routerHook (see index.tsx) from the gear
+// icon in Quick Access. Steam's native sidenav (SidebarNavigation): Apollo
+// Config (default), Profiles, Runner, Games, and Logs. "config" is owned
+// here and passed to the tabs that touch it (Apollo/Runner), so switching
+// tabs without saving doesn't lose edits made in the other one (they touch
+// the SAME object, saved whole in one go on the backend).
 export function SettingsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
@@ -77,7 +77,7 @@ export function SettingsPage() {
       return;
     }
     await saveConfig(config);
-    toaster.toast({ title: "MoonProfile", body: "Config salva" });
+    toaster.toast({ title: "MoonProfile", body: "Config saved" });
   };
 
   const closeEditor = () => {
@@ -94,34 +94,35 @@ export function SettingsPage() {
 
   const onDuplicate = (profile: Profile) => {
     const newId = makeUniqueId(`${profile.id}-copy`, profiles.map((p) => p.id));
-    setEditing({ profile: { ...profile, id: newId, name: `${profile.name} (copia)` }, isNew: true });
+    setEditing({ profile: { ...profile, id: newId, name: `${profile.name} (copy)` }, isNew: true });
   };
 
   const onDelete = (profile: Profile) => {
-    void persist(profiles.filter((p) => p.id !== profile.id), `Perfil "${profile.name}" excluido`);
+    void persist(profiles.filter((p) => p.id !== profile.id), `Profile "${profile.name}" deleted`);
   };
 
   const onSaveFromEditor = (saved: Profile) => {
     const exists = profiles.some((p) => p.id === saved.id);
     const updated = exists ? profiles.map((p) => (p.id === saved.id ? saved : p)) : [...profiles, saved];
-    void persist(updated, `Perfil "${saved.name}" salvo`);
+    void persist(updated, `Profile "${saved.name}" saved`);
     closeEditor();
   };
 
-  // routerHook.addRoute monta o componente puro, via createElement(component)
-  // sem nenhuma prop (confirmado na fonte do decky-loader,
-  // frontend/src/router-hook.tsx) - entao nao ha' "history"/"location" pra
-  // usar aqui. O botao fisico B do Steam Deck nao navega o history do
-  // browser nessa UI - dispara um CustomEvent "cancel" que sobe pela arvore
-  // de Focusable ate' alguem tratar (documentado no proprio FocusableProps
-  // do @decky/ui: onCancel). Por isso a interceptacao certa e' via
-  // Focusable.onCancel, nao via history/routing.
+  // routerHook.addRoute mounts the component plainly, via
+  // createElement(component) with no props at all (confirmed in
+  // decky-loader's source, frontend/src/router-hook.tsx), so there's no
+  // "history"/"location" to use here. The Steam Deck's physical B button
+  // doesn't navigate the browser's history in this UI, it fires a
+  // CustomEvent "cancel" that bubbles up the Focusable tree until someone
+  // handles it (documented in @decky/ui's own FocusableProps: onCancel).
+  // That's why the correct interception point is Focusable.onCancel, not
+  // history/routing.
   //
-  // Editando um perfil: consome o evento e volta pra listagem (nao sai de
-  // Config.). Fora disso (em qualquer aba da sidenav): sai da rota de
-  // Config. e reabre o Quick Access na aba do Decky - simetrico com o botao
-  // de engrenagem (TitleView.tsx), que faz CloseSideMenus() +
-  // Navigate(SETTINGS_ROUTE) pra chegar aqui.
+  // Editing a profile: consumes the event and goes back to the listing
+  // (doesn't leave the Settings page). Otherwise (in any sidenav tab):
+  // leaves the Settings route and reopens Quick Access on the Decky tab,
+  // symmetric with the gear button (TitleView.tsx), which does
+  // CloseSideMenus() + Navigate(SETTINGS_ROUTE) to get here.
   const onCancelButton = (e: CustomEvent) => {
     e.stopPropagation();
     if (editing !== null) {
@@ -138,12 +139,12 @@ export function SettingsPage() {
 
   const pages = [
     {
-      title: "Config do Apollo",
+      title: "Apollo Config",
       identifier: "apollo",
       content: <ApolloConfigSection config={config} setConfig={setConfig} onSave={onSaveConfig} />,
     },
     {
-      title: "Perfis",
+      title: "Profiles",
       identifier: "profiles",
       content: editing ? (
         <ProfileEditor
@@ -169,7 +170,7 @@ export function SettingsPage() {
       content: <RunnerConfigSection config={config} setConfig={setConfig} onSave={onSaveConfig} />,
     },
     {
-      title: "Jogos",
+      title: "Games",
       identifier: "games",
       content: <GamesGridSection />,
     },
@@ -181,15 +182,15 @@ export function SettingsPage() {
   ];
 
   return (
-    // Rota custom via routerHook.addRoute - diferente das telas nativas da
-    // Steam, nao vem com scroll de graca. ScrollPanelGroup/ScrollPanel e' o
-    // mesmo par que a propria Steam usa pra isso (respeita navegacao por
-    // gamepad tambem, ao contrario de so' um overflow:auto cru).
+    // Custom route via routerHook.addRoute, unlike Steam's native screens,
+    // it doesn't come with scrolling for free. ScrollPanelGroup/ScrollPanel
+    // is the same pair Steam itself uses for this (also respects gamepad
+    // navigation, unlike a plain overflow:auto).
     <ScrollPanelGroup style={{ height: "100%" }} focusable={false}>
       <ScrollPanel style={{ height: "100%" }}>
         <Focusable onCancel={onCancelButton} style={{ height: "100%" }}>
-          {/* paddingBottom generoso - sem isso o fim do conteudo fica atras
-              da barra inferior do Steam Deck, cortando a visualizacao. */}
+          {/* Generous paddingBottom, without it the end of the content ends
+              up behind the Steam Deck's bottom bar, cutting off the view. */}
           <div style={{ height: "100%", paddingBottom: "60px" }}>
             <SidebarNavigation title="MoonProfile" pages={pages} />
           </div>

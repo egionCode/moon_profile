@@ -4,11 +4,11 @@ import { toaster } from "@decky/api";
 import { listHostDisplays } from "./api";
 import { HostDisplay, Profile } from "./types";
 
-// Mesmo padrao do ProfileList.tsx: "ButtonItem"/"TextField" ocupam a row
-// inteira sozinhos, por isso dois lado a lado (Cancelar/Salvar, Largura/
-// Altura) empilhavam em vez de dividir a linha. Um Focusable com
-// display:flex, com cada filho envolto num div flexGrow:1, resolve pros
-// dois casos.
+// Same pattern as ProfileList.tsx: "ButtonItem"/"TextField" occupy the
+// whole row by themselves, which is why two side by side (Cancel/Save,
+// Width/Height) would stack instead of splitting the line. A Focusable
+// with display:flex, with each child wrapped in a div with flexGrow:1,
+// solves both cases.
 const rowStyle: CSSProperties = { display: "flex", flexDirection: "row", gap: "8px" };
 const halfStyle: CSSProperties = { flexGrow: 1, minWidth: 0 };
 
@@ -24,14 +24,14 @@ const CODEC_OPTIONS = [
   { data: "H264", label: "H264" },
 ];
 
-// ex: "3840x2160" - validacao basica, so pra pegar erro de digitacao antes
-// de mandar pro Apollo/Moonlight (que falham de formas confusas com um
-// valor invalido, como ja vimos na Fase 0/1).
+// ex: "3840x2160" - basic validation, just to catch typos before sending
+// it to Apollo/Moonlight (which fail in confusing ways with an invalid
+// value, as already seen in Phase 0/1).
 const RESOLUTION_RE = /^\d+x\d+$/;
 
-// O dado continua guardado como string "3840x2160" (e' o formato que o
-// backend/runner/Apollo esperam - ver main.py e runner.py), so' a UI que
-// separa em dois campos (Largura/Altura) pra ficar mais facil de editar.
+// The data is still stored as the string "3840x2160" (it's the format the
+// backend/runner/Apollo expect, see main.py and runner.py), only the UI
+// splits it into two fields (Width/Height) to make it easier to edit.
 function splitResolution(value: string): { width: string; height: string } {
   const [width = "", height = ""] = value.split("x");
   return { width, height };
@@ -48,11 +48,11 @@ interface ProfileEditorProps {
 export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }: ProfileEditorProps) {
   const [draft, setDraft] = useState<Profile>(profile);
   const [disableOutputsText, setDisableOutputsText] = useState(draft.host.disable_outputs.join(", "));
-  // Monitores de verdade do host (via MoonProfile Runner - ver
-  // moon_profile_runner/src-tauri/src/displays.rs). Enquanto vazio (ainda
-  // carregando, ou o Runner esta' inalcancavel), os campos abaixo caem pro
-  // texto livre de antes - nao deixa o usuario travado sem poder editar
-  // so' porque o Runner nao respondeu.
+  // The host's real monitors (via the MoonProfile Runner, see
+  // moon_profile_runner/src-tauri/src/displays.rs). While empty (still
+  // loading, or the Runner is unreachable), the fields below fall back to
+  // the old free-text input, so the user isn't stuck unable to edit just
+  // because the Runner didn't respond.
   const [displays, setDisplays] = useState<HostDisplay[]>([]);
 
   useEffect(() => {
@@ -68,34 +68,34 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
 
   const targetOutputOptions = displays.map((d) => ({
     data: d.name,
-    label: d.connected ? d.name : `${d.name} (desconectado)`,
+    label: d.connected ? d.name : `${d.name} (disconnected)`,
   }));
 
   const onSubmit = () => {
     if (!draft.name.trim()) {
-      toaster.toast({ title: "MoonProfile", body: "Nome do perfil nao pode ser vazio" });
+      toaster.toast({ title: "MoonProfile", body: "Profile name cannot be empty" });
       return;
     }
     if (!draft.id.trim()) {
-      toaster.toast({ title: "MoonProfile", body: "Id do perfil nao pode ser vazio" });
+      toaster.toast({ title: "MoonProfile", body: "Profile id cannot be empty" });
       return;
     }
     if (isNew && existingIds.includes(draft.id)) {
-      toaster.toast({ title: "MoonProfile", body: `Ja existe um perfil com id "${draft.id}"` });
+      toaster.toast({ title: "MoonProfile", body: `A profile with id "${draft.id}" already exists` });
       return;
     }
     if (!RESOLUTION_RE.test(draft.moonlight.resolution)) {
-      toaster.toast({ title: "MoonProfile", body: 'Resolucao do Moonlight invalida (formato "3840x2160")' });
+      toaster.toast({ title: "MoonProfile", body: 'Invalid Moonlight resolution (format "3840x2160")' });
       return;
     }
     if (!RESOLUTION_RE.test(draft.host.resolution)) {
-      toaster.toast({ title: "MoonProfile", body: 'Resolucao do Host invalida (formato "3840x2160")' });
+      toaster.toast({ title: "MoonProfile", body: 'Invalid Host resolution (format "3840x2160")' });
       return;
     }
 
-    // Com a lista de monitores de verdade (displays.length > 0), o toggle
-    // de cada output ja mantem draft.host.disable_outputs atualizado -
-    // so' precisa parsear o texto livre no fallback (Runner inalcancavel).
+    // With the real monitor list (displays.length > 0), each output's
+    // toggle already keeps draft.host.disable_outputs up to date, only
+    // need to parse the free text in the fallback (Runner unreachable).
     const disable_outputs =
       displays.length > 0
         ? draft.host.disable_outputs
@@ -109,16 +109,16 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
 
   return (
     <>
-      <PanelSection title={isNew ? "Novo perfil" : `Editar: ${profile.name}`}>
+      <PanelSection title={isNew ? "New profile" : `Edit: ${profile.name}`}>
         <PanelSectionRow>
           <TextField label="Id" disabled={!isNew} value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <TextField label="Nome" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <TextField label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         </PanelSectionRow>
         <PanelSectionRow>
           <DropdownItem
-            label="Gatilho"
+            label="Trigger"
             rgOptions={TRIGGER_OPTIONS}
             selectedOption={draft.trigger}
             onChange={(o) => setDraft({ ...draft, trigger: o.data })}
@@ -126,12 +126,12 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection title="Moonlight (cliente)">
+      <PanelSection title="Moonlight (client)">
         <PanelSectionRow>
           <Focusable style={rowStyle}>
             <div style={halfStyle}>
               <TextField
-                label="Largura"
+                label="Width"
                 mustBeNumeric
                 value={moonlightRes.width}
                 onChange={(e) =>
@@ -144,7 +144,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
             </div>
             <div style={halfStyle}>
               <TextField
-                label="Altura"
+                label="Height"
                 mustBeNumeric
                 value={moonlightRes.height}
                 onChange={(e) =>
@@ -194,14 +194,14 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         <PanelSectionRow>
           {displays.length > 0 ? (
             <DropdownItem
-              label="Output alvo"
+              label="Target output"
               rgOptions={targetOutputOptions}
               selectedOption={draft.host.target_output}
               onChange={(o) => setDraft({ ...draft, host: { ...draft.host, target_output: o.data } })}
             />
           ) : (
             <TextField
-              label="Output alvo"
+              label="Target output"
               value={draft.host.target_output}
               onChange={(e) => setDraft({ ...draft, host: { ...draft.host, target_output: e.target.value } })}
             />
@@ -211,7 +211,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
           <Focusable style={rowStyle}>
             <div style={halfStyle}>
               <TextField
-                label="Largura"
+                label="Width"
                 mustBeNumeric
                 value={hostRes.width}
                 onChange={(e) =>
@@ -221,7 +221,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
             </div>
             <div style={halfStyle}>
               <TextField
-                label="Altura"
+                label="Height"
                 mustBeNumeric
                 value={hostRes.height}
                 onChange={(e) =>
@@ -255,28 +255,28 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
-            label="Entrar em Big Picture ao abrir"
+            label="Enter Big Picture on launch"
             checked={draft.host.enter_bigpicture ?? false}
             onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, enter_bigpicture: checked } })}
           />
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
-            label="Mandar cursor pro canto ao jogar"
+            label="Move cursor to the corner while playing"
             checked={draft.host.move_cursor_to_corner ?? false}
             onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, move_cursor_to_corner: checked } })}
           />
         </PanelSectionRow>
         {displays.length > 0 ? (
-          // Lista dinamica - um toggle por monitor de verdade do host
-          // (menos o que ja' esta' escolhido como output alvo, nao faz
-          // sentido desabilitar o mesmo que acabou de ser ligado).
+          // Dynamic list, one toggle per real host monitor (except the one
+          // already chosen as the target output, doesn't make sense to
+          // disable the same one that was just turned on).
           displays
             .filter((d) => d.name !== draft.host.target_output)
             .map((d) => (
               <PanelSectionRow key={d.name}>
                 <ToggleField
-                  label={`Desabilitar ${d.name}${d.connected ? "" : " (desconectado)"}`}
+                  label={`Disable ${d.name}${d.connected ? "" : " (disconnected)"}`}
                   checked={draft.host.disable_outputs.includes(d.name)}
                   onChange={(checked) => {
                     const disable_outputs = checked
@@ -290,7 +290,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         ) : (
           <PanelSectionRow>
             <TextField
-              label="Outputs a desabilitar (separados por virgula)"
+              label="Outputs to disable (comma-separated)"
               value={disableOutputsText}
               onChange={(e) => setDisableOutputsText(e.target.value)}
             />
@@ -302,10 +302,10 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         <PanelSectionRow>
           <Focusable style={rowStyle}>
             <DialogButton style={halfStyle} onClick={onCancel}>
-              Cancelar
+              Cancel
             </DialogButton>
             <DialogButton style={halfStyle} onClick={onSubmit}>
-              Salvar perfil
+              Save profile
             </DialogButton>
           </Focusable>
         </PanelSectionRow>

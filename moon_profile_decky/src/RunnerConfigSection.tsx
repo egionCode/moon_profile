@@ -7,29 +7,29 @@ interface RunnerConfigSectionProps {
   onSave: () => void;
 }
 
-// Aba "Runner" da sidenav de Configuracoes - MoonProfile Runner e' o daemon
-// Tauri/Rust que roda no host (Fase 5 do PRD). NAO e' mais opcional: o
-// Apollo nao tem prep-cmd nenhum (nem do, nem undo) - e' o Runner quem
-// liga a tela no lancamento e desliga no fechamento, alem de detectar
-// sozinho quando o jogo fecha por dentro. So' a porta e' configuravel
-// aqui - o host e' sempre o mesmo da aba "Config do Apollo" (Runner e
-// Apollo rodam na mesma maquina, pedir o IP duas vezes seria redundante
-// e confuso).
+// "Runner" tab of the Settings sidenav: the MoonProfile Runner is the
+// Tauri/Rust daemon running on the host (PRD Phase 5). It's no longer
+// optional: Apollo has no prep-cmd at all (neither do nor undo), it's the
+// Runner that turns on the display at launch and turns it off at close,
+// besides detecting on its own when the game closes internally. Only the
+// port is configurable here, the host is always the same one from the
+// "Apollo Config" tab (Runner and Apollo run on the same machine, asking
+// for the IP twice would be redundant and confusing).
 export function RunnerConfigSection({ config, setConfig, onSave }: RunnerConfigSectionProps) {
   return (
     <>
       <PanelSection>
         <PanelSectionRow>
           <DialogBodyText>
-            Obrigatorio - o MoonProfile Runner precisa estar instalado e rodando no host pra
-            trocar a tela (resolucao/monitor) no lancamento e na desconexao, e pra detectar
-            automaticamente quando o jogo fecha por dentro. Usa o mesmo host configurado na aba
-            "Config do Apollo" - servidor local aberto na rede, sem autenticacao.
+            Required. The MoonProfile Runner needs to be installed and running on the host to
+            switch the display (resolution/monitor) on launch and disconnect, and to
+            automatically detect when the game closes internally. Uses the same host configured
+            in the "Apollo Config" tab. A local server open on the network, without authentication.
           </DialogBodyText>
         </PanelSectionRow>
         <PanelSectionRow>
           <TextField
-            label="Porta"
+            label="Port"
             mustBeNumeric
             value={String(config.runner_port)}
             onChange={(e) => setConfig({ ...config, runner_port: Number(e.target.value) || 0 })}
@@ -40,7 +40,7 @@ export function RunnerConfigSection({ config, setConfig, onSave }: RunnerConfigS
       <PanelSection>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onSave}>
-            Salvar
+            Save
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>

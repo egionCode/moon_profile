@@ -1,10 +1,10 @@
-// Coleção "Streaming" do Deck - agrupa os atalhos sincronizados numa pasta
-// visivel na biblioteca, separada do resto da colecao de jogos. Igual
-// SteamClient.Apps.SetCustomArtworkForApp em gameArtwork.ts,
-// window.collectionStore nao e' tipado por @decky/ui - shape confirmado
-// lendo o codigo-fonte real do MoonDeck (FrogTheFrog/moondeck,
-// src/steam-utils/), que resolve o mesmo problema (colecao non-Steam com
-// dedup) pro streaming via Moonlight.
+// The Deck's "Streaming" collection: groups the synced shortcuts into a
+// folder visible in the library, separate from the rest of the game
+// collection. Same as SteamClient.Apps.SetCustomArtworkForApp in
+// gameArtwork.ts, window.collectionStore isn't typed by @decky/ui, its
+// shape was confirmed by reading the real source of MoonDeck
+// (FrogTheFrog/moondeck, src/steam-utils/), which solves the same problem
+// (non-Steam collection with dedup) for streaming via Moonlight.
 
 import { getStreamingCollectionId, saveStreamingCollectionId } from "./api";
 
@@ -37,13 +37,13 @@ interface ResolvedCollection {
   id: string;
 }
 
-// O id persistido (config, ver api.ts) e' a fonte de verdade primeiro -
-// sobrevive a renomeacao manual da colecao (o "tag" usado por
-// GetCollectionIDByUserTag e' derivado do nome exibido, quebra se o
-// usuario renomear na Steam). Busca por tag e' so' o fallback pra achar
-// uma colecao ja existente da primeira vez (antes de termos um id
-// persistido) ou se o id salvo ficou orfao (colecao apagada por fora).
-// So' cria uma nova de verdade se nenhuma das duas achar nada.
+// The persisted id (config, see api.ts) is the source of truth first: it
+// survives manual renaming of the collection (the "tag" used by
+// GetCollectionIDByUserTag is derived from the displayed name, so it
+// breaks if the user renames it in Steam). Tag lookup is just the fallback
+// to find an already-existing collection the first time (before we have a
+// persisted id) or if the saved id became orphaned (collection deleted
+// externally). Only actually creates a new one if neither finds anything.
 async function resolveStreamingCollection(
   persistedId: string | null,
   initialOverviews: unknown[],
@@ -63,17 +63,18 @@ async function resolveStreamingCollection(
     }
   }
 
-  // Cria ja' com os apps iniciais (3o argumento de NewUnsavedCollection),
-  // em vez de criar vazia e so' depois chamar AddApps - um unico Save().
+  // Create it already with the initial apps (3rd argument of
+  // NewUnsavedCollection), instead of creating it empty and calling
+  // AddApps afterward: a single Save().
   const created = window.collectionStore.NewUnsavedCollection(COLLECTION_TAG, undefined, initialOverviews);
   if (created === undefined) {
     return null;
   }
   await created.Save();
 
-  // NewUnsavedCollection nao devolve o id (so' o objeto da colecao) - o
-  // unico jeito de descobrir o id de verdade e' perguntar de novo pelo
-  // tag, agora que ja foi salva.
+  // NewUnsavedCollection doesn't return the id (only the collection
+  // object), the only way to find out the real id is to ask again by tag,
+  // now that it has been saved.
   const newId = window.collectionStore.GetCollectionIDByUserTag(COLLECTION_TAG);
   if (newId === null) {
     return null;
@@ -81,13 +82,13 @@ async function resolveStreamingCollection(
   return { collection: created, id: newId };
 }
 
-// Adiciona os atalhos sincronizados (deck_app_id) na colecao "Streaming",
-// criando-a se ainda nao existir, e persiste o id resolvido pra
-// sincronizacoes futuras nao dependerem so' da busca por tag. Dedup
-// manual via collection.apps.has - AddApps nao deduplica sozinho
-// (confirmado no codigo do MoonDeck) - so' persiste (Save) se realmente
-// faltava alguem. Retorna false (sem lancar excecao) se algo deu errado,
-// pro chamador poder avisar o usuario em vez de falhar silencioso.
+// Adds the synced shortcuts (deck_app_id) to the "Streaming" collection,
+// creating it if it doesn't exist yet, and persists the resolved id so
+// future syncs don't have to depend solely on the tag lookup. Manual dedup
+// via collection.apps.has, AddApps doesn't deduplicate on its own
+// (confirmed in MoonDeck's code), only persists (Save) if something was
+// actually missing. Returns false (without throwing) if something went
+// wrong, so the caller can warn the user instead of failing silently.
 export async function addShortcutsToStreamingCollection(deckAppIds: number[]): Promise<boolean> {
   const overviews = deckAppIds
     .map((appId) => window.appStore.GetAppOverviewByAppID(appId))
@@ -96,7 +97,7 @@ export async function addShortcutsToStreamingCollection(deckAppIds: number[]): P
   const persistedId = await getStreamingCollectionId();
   const resolved = await resolveStreamingCollection(persistedId, overviews);
   if (resolved === null) {
-    console.error('MoonProfile: falha ao criar/obter a colecao "Streaming"');
+    console.error('MoonProfile: failed to create/get the "Streaming" collection');
     return false;
   }
 

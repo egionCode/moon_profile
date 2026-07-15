@@ -1,20 +1,21 @@
-// Aplica capa/hero num atalho criado por gameShortcuts.ts, usando
-// SteamClient.Apps.SetCustomArtworkForApp (API real confirmada lendo o
-// codigo-fonte do SteamGridDB/decky-steamgriddb, src/hooks/useSGDB.tsx -
-// e' tudo client-side: busca a imagem, base64, chama essa funcao).
+// Applies a capsule/hero image to a shortcut created by gameShortcuts.ts,
+// using SteamClient.Apps.SetCustomArtworkForApp (real API confirmed by
+// reading the source of SteamGridDB/decky-steamgriddb,
+// src/hooks/useSGDB.tsx: it's all client-side, fetch the image, base64 it,
+// call this function).
 //
-// "ELibraryAssetType" e' um enum real do @decky/ui mas nao fica alcancavel
-// via import publico (so' o "Apps" TYPE e' re-exportado, nao o enum) - o
-// proprio decky-steamgriddb usa os numeros literais direto pelo mesmo
-// motivo (ver constants.ts deles: grid_p=0, hero=1, logo=2, grid_l=3,
-// icon=4), entao seguimos o mesmo padrao aqui.
+// "ELibraryAssetType" is a real enum in @decky/ui but isn't reachable via
+// public import (only the "Apps" TYPE is re-exported, not the enum).
+// decky-steamgriddb itself uses the literal numbers directly for the same
+// reason (see their constants.ts: grid_p=0, hero=1, logo=2, grid_l=3,
+// icon=4), so we follow the same pattern here.
 import { fetchNoCors } from "@decky/api";
 
-const ASSET_TYPE_CAPSULE = 0; // capa vertical (grid_p)
+const ASSET_TYPE_CAPSULE = 0; // vertical capsule (grid_p)
 const ASSET_TYPE_HERO = 1;
 
-// Exportada tambem pra GamesGridSection.tsx reusar (preview da capa na
-// nossa propria UI, nao a da Steam) - mesma logica, nao duplicar.
+// Also exported for GamesGridSection.tsx to reuse (capsule preview in our
+// own UI, not Steam's) - same logic, avoid duplicating it.
 export async function getImageAsB64(url: string): Promise<string | null> {
   try {
     const response = await fetchNoCors(url);
@@ -29,7 +30,7 @@ export async function getImageAsB64(url: string): Promise<string | null> {
     }
     return btoa(binary);
   } catch (e) {
-    console.error(`MoonProfile: falha ao buscar imagem de artwork (${url})`, e);
+    console.error(`MoonProfile: failed to fetch artwork image (${url})`, e);
     return null;
   }
 }
@@ -37,12 +38,12 @@ export async function getImageAsB64(url: string): Promise<string | null> {
 async function applyArtwork(appId: number, url: string, assetType: number): Promise<void> {
   const data = await getImageAsB64(url);
   if (!data) {
-    return; // falha ao buscar - deixa sem essa arte especifica, nao trava o resto
+    return; // fetch failed, leave this specific artwork unset, don't block the rest
   }
   await SteamClient.Apps.SetCustomArtworkForApp(appId, data, "jpg", assetType);
 }
 
-// CDN oficial e gratuita da Steam - so' funciona pra AppIDs Steam reais.
+// Official, free Steam CDN, only works for real Steam AppIDs.
 export function getSteamCapsuleUrl(steamAppId: string): string {
   return `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppId}/library_600x900.jpg`;
 }
@@ -51,8 +52,8 @@ function getSteamHeroUrl(steamAppId: string): string {
   return `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppId}/library_hero.jpg`;
 }
 
-// So' funciona pra jogos que sao catalogo Steam real (precisa do AppID
-// real da Valve, nao de um atalho non-Steam). Non-Steam fica pro Estagio B
+// Only works for games that are actually in the Steam catalog (needs the
+// real Valve AppID, not a non-Steam shortcut). Non-Steam is left for Stage B
 // (SteamGridDB).
 export async function applySteamCdnArtwork(shortcutAppId: number, steamAppId: string): Promise<void> {
   await Promise.all([

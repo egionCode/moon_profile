@@ -8,8 +8,8 @@ vi.mock("../src/api", () => ({
   saveStreamingCollectionId: (...args: unknown[]) => saveStreamingCollectionId(...args),
 }));
 
-// import dinamico depois do vi.mock (hoisted) - mesmo padrao recomendado
-// pelo vitest pra mockar um modulo importado pelo modulo sob teste.
+// Dynamic import after vi.mock (hoisted), same pattern recommended by
+// vitest for mocking a module imported by the module under test.
 const { addShortcutsToStreamingCollection } = await import("../src/gameCollection");
 
 function overviewOf(appId: number): unknown {
@@ -45,8 +45,8 @@ describe("addShortcutsToStreamingCollection", () => {
 
   it("creates the collection with the initial apps when none exists yet", async () => {
     (window as any).collectionStore.GetCollectionIDByUserTag
-      .mockReturnValueOnce(null) // resolveStreamingCollection: nao existe ainda
-      .mockReturnValue("collection-id-1"); // apos o Save(), pra descobrir o id de verdade
+      .mockReturnValueOnce(null) // resolveStreamingCollection: doesn't exist yet
+      .mockReturnValue("collection-id-1"); // after Save(), to find out the real id
 
     const ok = await addShortcutsToStreamingCollection([111, 222]);
 
@@ -69,7 +69,7 @@ describe("addShortcutsToStreamingCollection", () => {
     expect(ok).toBe(true);
     expect((window as any).collectionStore.GetCollection).toHaveBeenCalledWith("collection-id-1");
     expect((window as any).collectionStore.NewUnsavedCollection).not.toHaveBeenCalled();
-    expect(saveStreamingCollectionId).not.toHaveBeenCalled(); // id nao mudou, nao precisa regravar
+    expect(saveStreamingCollectionId).not.toHaveBeenCalled(); // id didn't change, no need to rewrite
   });
 
   it("falls back to tag lookup when the persisted id points at a deleted collection", async () => {
@@ -83,13 +83,13 @@ describe("addShortcutsToStreamingCollection", () => {
 
     expect(ok).toBe(true);
     expect((window as any).collectionStore.NewUnsavedCollection).not.toHaveBeenCalled();
-    expect(saveStreamingCollectionId).toHaveBeenCalledWith("collection-id-2"); // id mudou, regrava
+    expect(saveStreamingCollectionId).toHaveBeenCalledWith("collection-id-2"); // id changed, rewrite
   });
 
   it("skips apps already in the collection and does not call Save again", async () => {
     getStreamingCollectionId.mockResolvedValue("collection-id-1");
     (window as any).collectionStore.GetCollection.mockReturnValue(collection);
-    collection.apps.has.mockReturnValue(true); // ja' esta' tudo la'
+    collection.apps.has.mockReturnValue(true); // everything is already there
 
     const ok = await addShortcutsToStreamingCollection([111, 222]);
 
@@ -101,7 +101,7 @@ describe("addShortcutsToStreamingCollection", () => {
   it("only adds the apps that are missing (dedup)", async () => {
     getStreamingCollectionId.mockResolvedValue("collection-id-1");
     (window as any).collectionStore.GetCollection.mockReturnValue(collection);
-    collection.apps.has.mockImplementation((id: number) => id === 111); // 111 ja' esta', 222 nao
+    collection.apps.has.mockImplementation((id: number) => id === 111); // 111 already there, 222 not
 
     const ok = await addShortcutsToStreamingCollection([111, 222]);
 

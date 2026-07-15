@@ -1,13 +1,13 @@
 """
-Logica compartilhada entre main.py (roda dentro do Decky Loader) e
-runner.py (roda como processo solto, exec'ado por um atalho Steam - ver
-docs/prd.md, secao dos atalhos por jogo). Os dois precisam falar com o
-Apollo e detectar contexto do mesmo jeito, entao isso mora aqui em vez de
-duplicado nos dois lugares.
+Logic shared between main.py (runs inside the Decky Loader) and runner.py
+(runs as a standalone process, exec'd by a Steam shortcut, see docs/prd.md,
+per-game shortcuts section). Both need to talk to Apollo and detect
+context the same way, so it lives here instead of being duplicated in
+both places.
 
-runner.py NAO roda dentro do ambiente do Decky Loader - importa este
-modulo inserindo o caminho de py_modules/ manualmente no sys.path (ver
-runner.py), nao pelo mecanismo normal do loader.
+runner.py does NOT run inside the Decky Loader environment: it imports
+this module by manually inserting the py_modules/ path into sys.path
+(see runner.py), not through the loader's normal mechanism.
 """
 
 import json
@@ -19,27 +19,27 @@ import urllib.error
 APOLLO_PORT = 47990
 RUNNER_PORT = 47991
 
-# Mapeamento pro flag --video-codec do moonlight CLI: nosso modelo de dados
-# usa "H264" (sem ponto) mas o CLI espera "H.264" literal.
+# Mapping for the moonlight CLI's --video-codec flag: our data model uses
+# "H264" (no dot) but the CLI expects a literal "H.264".
 CODEC_FLAGS = {"HEVC": "HEVC", "AV1": "AV1", "H264": "H.264"}
 
 
 def detect_context(drm_path: str = "/sys/class/drm") -> str:
-    """Retorna 'docked' se algum display externo estiver conectado, senao 'handheld'.
+    """Returns 'docked' if any external display is connected, otherwise 'handheld'.
 
-    drm_path e' configuravel pra permitir testar contra uma fixture (uma
-    pasta fake com a mesma estrutura de /sys/class/drm) em vez de depender
-    do hardware de verdade da maquina rodando o teste.
+    drm_path is configurable to allow testing against a fixture (a fake
+    folder with the same structure as /sys/class/drm) instead of depending
+    on the real hardware of the machine running the test.
     """
     import os
 
     for entry in os.listdir(drm_path):
         if not entry.startswith("card"):
             continue
-        # eDP = tela interna do proprio Deck, sempre presente e sempre
-        # "connected" - e "eDP-1" contem "DP" como substring, entao sem essa
-        # exclusao a funcao SEMPRE retornava "docked", dockado ou nao
-        # (bug real, encontrado testando no device de verdade).
+        # eDP = the Deck's own internal display, always present and always
+        # "connected", and "eDP-1" contains "DP" as a substring, so without
+        # this exclusion the function ALWAYS returned "docked", docked or
+        # not (real bug, found while testing on the actual device).
         if "eDP" in entry:
             continue
         if not ("HDMI" in entry or "DP" in entry):
@@ -54,19 +54,20 @@ def detect_context(drm_path: str = "/sys/class/drm") -> str:
 
 def build_display_commands(host_cfg: dict) -> list:
     """
-    Comandos de LIGAR/CONFIGURAR a tela do host (kscreen-doctor: ativa o
-    target_output, seta modo/resolucao, HDR, desativa os outros
-    outputs) - em ordem de EXECUCAO simples (nao e' mais array do Apollo,
-    e' uma lista de strings que o Runner (Rust) roda direto via shell,
-    ANTES de dar exec no Moonlight - ver session.rs/register_session).
+    Commands to TURN ON/CONFIGURE the host display (kscreen-doctor: enables
+    the target_output, sets mode/resolution, HDR, disables the other
+    outputs), in simple EXECUTION order (no longer an Apollo array, it's a
+    list of strings that the Runner (Rust) runs directly via shell, BEFORE
+    exec'ing into Moonlight, see session.rs/register_session).
 
-    O Apollo NAO tem mais prep-cmd nenhum (nem do, nem undo) - decisao
-    explicita de tirar essa responsabilidade dele (mais "plug and play":
-    o Apollo so' precisa saber conectar e rodar o "cmd", quem manda de
-    verdade na tela e no ciclo de vida da sessao e' o Runner, que ja
-    precisa saber ligar/desligar telas pro fechamento mesmo - ver
-    build_restore_commands). O Runner deixou de ser opcional por causa
-    disso: sem ele, a troca de tela simplesmente nao acontece.
+    Apollo no longer has any prep-cmd at all (neither do nor undo): an
+    explicit decision to take this responsibility away from it (more
+    "plug and play": Apollo only needs to know how to connect and run the
+    "cmd", the one who actually controls the display and the session
+    lifecycle is the Runner, which already needs to know how to turn
+    displays on/off for closing anyway, see build_restore_commands). The
+    Runner stopped being optional because of this: without it, the display
+    switch simply doesn't happen.
     """
     target = host_cfg["target_output"]
     resolution = host_cfg["resolution"]
@@ -82,21 +83,21 @@ def build_display_commands(host_cfg: dict) -> list:
     commands.extend(f"kscreen-doctor output.{o}.disable" for o in disable_outputs)
 
     if host_cfg.get("enter_bigpicture"):
-        # Entra em Big Picture no host ao lancar - util pra quem usa o
-        # proprio host como HTPC/TV e quer a UI de Big Picture em vez do
-        # desktop aparecendo atras do stream. Simetrico com o "fecha o
-        # Big Picture" (condicional agora) em build_restore_commands.
+        # Enters Big Picture on the host at launch: useful for anyone using
+        # the host itself as an HTPC/TV who wants the Big Picture UI
+        # instead of the desktop showing up behind the stream. Symmetric
+        # with the (now conditional) "close Big Picture" in build_restore_commands.
         commands.append("setsid steam steam://open/bigpicture")
 
     if host_cfg.get("move_cursor_to_corner"):
-        # Alguns jogos (achado real: FIFA) prendem o cursor no meio da
-        # tela mesmo jogando so' de controle - manda ele pro canto
-        # inferior direito do output alvo (ydotool, unico jeito de mover
-        # o cursor no Wayland sem apoio do compositor - kwin nao deixa
-        # escrever workspace.cursorPos nessa versao do Plasma, confirmado
-        # rodando de verdade). Roda pelo Runner (Rust) igual o resto dos
-        # display_commands - "Rust controla tudo que mexe no host", ver
-        # AGENTS.md.
+        # Some games (real finding: FIFA) lock the cursor in the middle of
+        # the screen even while playing with a controller only: send it to
+        # the bottom-right corner of the target output (ydotool, the only
+        # way to move the cursor on Wayland without compositor support,
+        # KWin won't let you write workspace.cursorPos on this Plasma
+        # version, confirmed by running it for real). Runs through the
+        # Runner (Rust) just like the rest of display_commands, "Rust
+        # controls everything that touches the host", see AGENTS.md.
         width, height = resolution.split("x")
         commands.append(f"ydotool mousemove -a {int(width) - 1} {int(height) - 1}")
 
@@ -105,24 +106,24 @@ def build_display_commands(host_cfg: dict) -> list:
 
 def build_restore_commands(host_cfg: dict) -> list:
     """
-    Comandos de RESTAURAR a tela do host (fecha o Big Picture, religa os
-    outputs desativados, desliga o target) - em ordem de EXECUCAO. Usado
-    pelo Runner tanto no fechamento AUTONOMO (watchdog detecta que o jogo
-    fechou sozinho) quanto no MANUAL ("Fechar conexao"), depois de
-    garantir (session.rs) que o processo do jogo ja acabou de verdade -
-    ver kill_game_process no lado Rust, que cuida de matar o jogo ANTES
-    de rodar isso quando o fechamento e' manual (pode estar genuinamente
-    vivo ainda).
+    Commands to RESTORE the host display (closes Big Picture, re-enables
+    the disabled outputs, turns off the target), in EXECUTION order. Used
+    by the Runner both on AUTONOMOUS closing (watchdog detects the game
+    closed on its own) and on MANUAL closing ("Close connection"), after
+    making sure (session.rs) the game process has really ended already,
+    see kill_game_process on the Rust side, which takes care of killing
+    the game BEFORE running this when closing is manual (it could still
+    genuinely be alive).
     """
     target = host_cfg["target_output"]
     disable_outputs = host_cfg.get("disable_outputs", [])
 
     commands = []
     if host_cfg.get("enter_bigpicture"):
-        # So' fecha o Big Picture se o perfil de fato abriu ele no
-        # lancamento (build_display_commands) - sempre PRIMEIRO no
-        # fechamento, antes de mexer em qualquer kscreen-doctor (sair do
-        # Big Picture antes de trocar a resolucao, nao depois).
+        # Only closes Big Picture if the profile actually opened it at
+        # launch (build_display_commands): always FIRST on closing, before
+        # touching any kscreen-doctor (leave Big Picture before changing
+        # the resolution, not after).
         commands.append("setsid steam steam://close/bigpicture")
         commands.append("sleep 2")
     commands.extend(f"kscreen-doctor output.{o}.enable" for o in disable_outputs)
@@ -134,12 +135,12 @@ def build_restore_commands(host_cfg: dict) -> list:
 
 class ApolloClient:
     """
-    Cliente minimo (so stdlib, sem 'requests') pra API REST do Apollo.
+    Minimal client (stdlib only, no 'requests') for the Apollo REST API.
 
-    Este fork (ClassicOldSong/Apollo) NAO usa HTTP Basic Auth, apesar do
-    que diz docs/api.md - authenticate() em confighttp.cpp so checa um
-    cookie de sessao "auth", obtido via POST /api/login. Validado na
-    Fase 0 contra o Apollo de verdade.
+    This fork (ClassicOldSong/Apollo) does NOT use HTTP Basic Auth, despite
+    what docs/api.md says: authenticate() in confighttp.cpp only checks an
+    "auth" session cookie, obtained via POST /api/login. Validated in
+    Phase 0 against the real Apollo.
     """
 
     def __init__(self, host: str, username: str, password: str, port: int = APOLLO_PORT):
@@ -149,7 +150,7 @@ class ApolloClient:
 
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE  # certificado auto-assinado do Apollo
+        ctx.verify_mode = ssl.CERT_NONE  # Apollo's self-signed certificate
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
             urllib.request.HTTPSHandler(context=ctx),
@@ -168,9 +169,9 @@ class ApolloClient:
         self._request("POST", "/api/login", {"username": self.username, "password": self.password})
 
     def find_app_uuid(self, name: str) -> str:
-        # Apps sao identificados por uuid, nao por indice de array - o
-        # campo "index" do exemplo antigo de doc do Sunshine e' descartado
-        # pelo servidor (migrate_apps() em process.cpp).
+        # Apps are identified by uuid, not array index: the "index" field
+        # from the old Sunshine doc example is discarded by the server
+        # (migrate_apps() in process.cpp).
         apps = self._request("GET", "/api/apps").get("apps", [])
         for app in apps:
             if app.get("name") == name:
@@ -183,17 +184,17 @@ class ApolloClient:
 
 def classify_apollo_error(host: str, error: Exception) -> str:
     """
-    Traduz uma excecao de rede/HTTP falando com o Apollo numa mensagem clara,
-    em vez do texto cru da excecao Python.
+    Translates a network/HTTP exception from talking to Apollo into a clear
+    message, instead of the raw Python exception text.
 
-    Credenciais erradas: confirmado no codigo real do Apollo
-    (confighttp.cpp:login()) que ele responde 401 nesse caso (nao 403/400
-    generico) - e' um sinal confiavel pra diferenciar de "host offline".
+    Wrong credentials: confirmed in the real Apollo code
+    (confighttp.cpp:login()) that it responds with 401 in that case (not a
+    generic 403/400), a reliable signal to tell apart from "host offline".
     """
     if isinstance(error, urllib.error.HTTPError):
         if error.code == 401:
-            return "Usuario ou senha do Apollo incorretos"
-        return f"Apollo respondeu com erro inesperado (HTTP {error.code})"
+            return "Wrong Apollo username or password"
+        return f"Apollo responded with an unexpected error (HTTP {error.code})"
     if isinstance(error, json.JSONDecodeError):
-        return f"Apollo respondeu algo que nao e' JSON - confira se {host}:{APOLLO_PORT} e' mesmo o Apollo"
-    return f"Nao consegui alcancar o Apollo em {host}:{APOLLO_PORT} - confira se o host esta ligado e na mesma rede"
+        return f"Apollo responded with something that isn't JSON, check whether {host}:{APOLLO_PORT} is really Apollo"
+    return f"Could not reach Apollo at {host}:{APOLLO_PORT}, check whether the host is on and on the same network"

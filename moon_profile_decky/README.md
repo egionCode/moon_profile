@@ -1,44 +1,46 @@
 # MoonProfile
 
-Plugin [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) para Steam Deck que gerencia perfis de streaming [Moonlight](https://moonlight-stream.org/)/[Apollo](https://github.com/ClassicOldSong/Apollo) com detecção automática de contexto (dockado vs portátil) e configuração dinâmica do host via API REST do Apollo.
+[Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for Steam Deck that manages [Moonlight](https://moonlight-stream.org/)/[Apollo](https://github.com/ClassicOldSong/Apollo) streaming profiles with automatic context detection (docked vs handheld) and dynamic host configuration via Apollo's REST API.
 
-## O problema que isso resolve
+## The problem this solves
 
-Moonlight não sabe se o Deck está dockado numa TV 4K ou portátil na tela interna - dispara sempre a mesma resolução/bitrate, e o prep-cmd do Apollo é fixo, não se adapta a cenários diferentes (HDR na TV vs SDR portátil). Configurar isso manualmente toda sessão é insustentável.
+Moonlight doesn't know whether the Deck is docked to a 4K TV or handheld on the internal screen, it always fires the same resolution/bitrate, and Apollo's prep-cmd is fixed, doesn't adapt to different scenarios (HDR on the TV vs SDR handheld). Configuring this manually every session doesn't scale.
 
-O MoonProfile detecta o contexto automaticamente (via `/sys/class/drm`, checando se algum display externo está conectado) e aplica um perfil que controla, ao mesmo tempo, a configuração do cliente Moonlight (resolução, fps, bitrate, codec, HDR) e a configuração de displays do host via Apollo (output ativo, resolução, HDR/WCG, quais outputs desligar).
+MoonProfile detects the context automatically (via `/sys/class/drm`, checking whether any external display is connected) and applies a profile that controls, at the same time, the Moonlight client configuration (resolution, fps, bitrate, codec, HDR) and the host's display configuration via Apollo (active output, resolution, HDR/WCG, which outputs to disable).
 
-## Diferencial em relação ao MoonDeck
+## Difference from MoonDeck
 
-- Zero componente adicional no host - fala só com a API REST que o Apollo já expõe, sem precisar instalar/manter um daemon companion (Buddy) rodando no PC.
-- Perfis de streaming editáveis direto no Deck, com detecção automática de contexto (dockado/portátil) - o MoonDeck não tem isso.
-- Cada perfil controla cliente Moonlight e host simultaneamente.
+- Zero additional component on the host, only talks to the REST API Apollo already exposes, no need to install/maintain a companion daemon (Buddy) running on the PC.
+- Streaming profiles editable directly on the Deck, with automatic context detection (docked/handheld), MoonDeck doesn't have this.
+- Each profile controls the Moonlight client and the host simultaneously.
 
-## Requisitos
+## Requirements
 
-- Apollo 0.4.8+ rodando no host.
-- KDE Plasma 6 (Wayland) no host - o controle de display usa `kscreen-doctor`.
-- GPU AMD RDNA 4 ou compatível (VAAPI).
-- Moonlight Flatpak (`com.moonlight_stream.Moonlight`) instalado no Deck.
+- Apollo 0.4.8+ running on the host.
+- KDE Plasma 6 (Wayland) on the host, display control uses `kscreen-doctor`.
+- AMD RDNA 4 GPU or equivalent (VAAPI).
+- Moonlight Flatpak (`com.moonlight_stream.Moonlight`) installed on the Deck.
 
-## Como usar
+## How to use
 
-1. **Configure o Apollo** (Quick Access → ⚙️ no título → aba "Config do Apollo"): host, usuário e senha - as mesmas credenciais do painel web do Apollo.
-2. **Crie perfis** (aba "Perfis"): cada perfil tem um gatilho (`docked`, `handheld` ou `manual`), a configuração do cliente Moonlight e a configuração de displays do host. Pelo menos um perfil com gatilho `docked` e um com `handheld` cobre a detecção automática.
-3. **Ajuste a posição do botão** (aba "Posição do botão", opcional): onde o botão de stream aparece na tela de cada jogo - predefinições rápidas ou ajuste fino por campo (top/bottom/left/right).
-4. **Jogue**: o botão de satélite aparece na tela de cada jogo (ao lado do "Jogar" nativo) e no Quick Access. Ele detecta o contexto atual, aplica o perfil correspondente, configura o Apollo via API e lança o Moonlight através de um atalho Steam (necessário pro Gamescope focar a janela corretamente).
-5. **Fechar conexão** (Quick Access): encerra a sessão no Apollo, restaura os displays do host à configuração original.
-6. **Logs** (aba "Logs" nas configurações): mostra as últimas linhas do log da sessão atual do plugin, sem precisar de SSH.
+1. **Configure Apollo** (Quick Access → ⚙️ in the title → "Apollo config" tab): host, username and password, the same credentials as Apollo's web panel.
+2. **Create profiles** (the "Profiles" tab): each profile has a trigger (`docked`, `handheld`, or `manual`), the Moonlight client configuration, and the host's display configuration. At least one profile with the `docked` trigger and one with `handheld` covers automatic detection.
+3. **Sync games from the host** (Quick Access): creates a library shortcut for each Steam game installed on the host, with cover/hero art.
+4. **Play**: click "Play" on a synced shortcut like any other game in the library. It detects the current context, applies the matching profile, configures Apollo via its API, and launches Moonlight through a Steam shortcut (needed so Gamescope focuses the window correctly).
+5. **Close connection** (Quick Access): ends the session on Apollo, restores the host's displays to their original configuration.
+6. **Logs** (the "Logs" tab in settings): shows the last lines of the plugin's current session log, no SSH needed.
 
-## Desenvolvimento
+## Development
 
 ```bash
 pnpm i
-pnpm run build       # build do frontend (dist/index.js)
-./deploy.sh           # sincroniza com o Deck e reinicia o plugin_loader
-./deploy.sh build     # builda e sincroniza numa tacada só
+pnpm run build       # frontend build (dist/index.js)
+./deploy.sh           # syncs with the Deck and restarts plugin_loader
+./deploy.sh build     # builds and syncs in one go
 ```
 
-`deploy.sh` espera uma chave SSH sem senha pro Deck e algumas regras `sudoers` NOPASSWD - ver comentários no topo do script.
+`deploy.sh` expects a passwordless SSH key for the Deck and a few
+NOPASSWD `sudoers` rules, see the comments at the top of the script.
 
-Documentação completa (motivação, arquitetura, fases de execução, decisões e limitações conhecidas) em [`docs/prd.md`](docs/prd.md).
+Full documentation (motivation, architecture, execution phases,
+decisions, and known limitations) in [`docs/prd.md`](docs/prd.md).

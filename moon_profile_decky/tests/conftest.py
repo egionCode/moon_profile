@@ -1,10 +1,10 @@
 """
-main.py roda dentro do Decky Loader de verdade, que injeta py_modules/ no
-sys.path e um modulo global "decky" com constantes de diretorio + logger
-(ver decky-loader/sandboxed_plugin.py) - nada disso existe fora do loader.
-Este conftest recria os dois artificialmente antes de importar main.py,
-igual runner.py faz sozinho em produção (insere py_modules/ manualmente
-no sys.path - ver runner.py).
+main.py runs inside the real Decky Loader, which injects py_modules/ into
+sys.path and a global "decky" module with directory constants + a logger
+(see decky-loader/sandboxed_plugin.py): none of that exists outside the
+loader. This conftest artificially recreates both before importing
+main.py, the same way runner.py does on its own in production (manually
+inserting py_modules/ into sys.path, see runner.py).
 """
 
 import sys
@@ -39,10 +39,10 @@ import pytest
 @pytest.fixture
 def plugin_module(tmp_path, monkeypatch):
     """
-    Importa main.py com decky.DECKY_PLUGIN_SETTINGS_DIR/DECKY_PLUGIN_DIR
-    apontando pra uma pasta temporaria isolada (nao a config de verdade do
-    usuario) - cada teste comeca do zero, sem nenhum config.json/
-    game_shortcuts.json pre-existente.
+    Imports main.py with decky.DECKY_PLUGIN_SETTINGS_DIR/DECKY_PLUGIN_DIR
+    pointing to an isolated temporary folder (not the user's real config),
+    so each test starts from scratch, with no pre-existing config.json/
+    game_shortcuts.json.
     """
     settings_dir = tmp_path / "settings"
     plugin_dir = tmp_path / "plugin"
@@ -52,9 +52,9 @@ def plugin_module(tmp_path, monkeypatch):
     fake_decky = _make_fake_decky_module(settings_dir, plugin_dir)
     monkeypatch.setitem(sys.modules, "decky", fake_decky)
 
-    # Reimporta do zero a cada teste (nao reusa o modulo em cache doutro
-    # teste) - senao o "decky" capturado no import ficaria preso na
-    # primeira pasta temporaria criada na sessao toda.
+    # Reimports from scratch on every test (doesn't reuse the module cached
+    # from another test), otherwise the "decky" captured at import time
+    # would stay stuck on the first temporary folder created in the whole session.
     sys.modules.pop("main", None)
     import main as main_module
 

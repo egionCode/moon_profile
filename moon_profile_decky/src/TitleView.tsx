@@ -2,15 +2,15 @@ import { DialogButton, Focusable, Navigation, staticClasses } from "@decky/ui";
 import { FaCog } from "react-icons/fa";
 import { SETTINGS_ROUTE } from "./routes";
 
-// Padrao copiado do MoonDeck (src/components/titleview/titleview.tsx) e
-// conferido contra o CssLoader (DeckThemes/SDH-CssLoader,
-// src/components/TitleView.tsx) - os dois concordam exatamente nos mesmos
-// valores, entao sao o "certo" aqui, nao coincidencia: "padding: 0" e
-// "boxShadow: none" no Focusable anulam o padding/sombra que a propria
-// classe "staticClasses.Title" ja' traz (sem isso, soma e desalinha);
-// "marginRight: auto" no titulo empurra ele pra esquerda explicitamente;
-// "marginTop: -4px" no icone recentraliza verticalmente dentro do botao
-// de 28px (sem isso o icone fica visivelmente deslocado pra baixo).
+// Pattern copied from MoonDeck (src/components/titleview/titleview.tsx)
+// and checked against CssLoader (DeckThemes/SDH-CssLoader,
+// src/components/TitleView.tsx), both agree on the exact same values, so
+// these are the "correct" ones here, not a coincidence: "padding: 0" and
+// "boxShadow: none" on the Focusable cancel out the padding/shadow that the
+// "staticClasses.Title" class already brings (without this, they stack and
+// misalign); "marginRight: auto" on the title explicitly pushes it to the
+// left; "marginTop: -4px" on the icon re-centers it vertically inside the
+// 28px button (without this the icon is visibly shifted downward).
 export function TitleView() {
   const onSettingsClick = () => {
     Navigation.CloseSideMenus();

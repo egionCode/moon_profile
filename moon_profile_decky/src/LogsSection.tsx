@@ -13,10 +13,10 @@ const logStyle: CSSProperties = {
   overflowY: "auto",
 };
 
-// Aba "Logs" da sidenav de Configuracoes - le decky.DECKY_PLUGIN_LOG (o
-// arquivo da sessao atual, ver main.py:get_logs) sem precisar de SSH +
-// journalctl. So' busca sob demanda (botao Atualizar), nao fica pollando -
-// log e' pra depurar um problema pontual, nao pra ficar de olho o tempo todo.
+// "Logs" tab of the Settings sidenav: reads decky.DECKY_PLUGIN_LOG (the
+// current session's file, see main.py:get_logs) without needing SSH +
+// journalctl. Only fetches on demand (Refresh button), doesn't poll, logs
+// are for debugging a specific problem, not for watching continuously.
 export function LogsSection() {
   const [logs, setLogs] = useState("");
   const [loading, setLoading] = useState(false);
@@ -38,11 +38,11 @@ export function LogsSection() {
     <PanelSection>
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={refresh} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar"}
+          {loading ? "Refreshing..." : "Refresh"}
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
-        <div style={logStyle}>{logs || "Carregando..."}</div>
+        <div style={logStyle}>{logs || "Loading..."}</div>
       </PanelSectionRow>
     </PanelSection>
   );

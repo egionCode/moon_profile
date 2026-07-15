@@ -1,8 +1,7 @@
 """
-list_host_displays() (main.py) e RunnerClient.list_displays() - alimentam
-o ProfileEditor.tsx com os monitores de verdade do host (via
-GET /displays no MoonProfile Runner, ver
-moon_profile_runner/src-tauri/src/displays.rs).
+list_host_displays() (main.py) and RunnerClient.list_displays() feed
+ProfileEditor.tsx with the host's real monitors (via GET /displays on the
+MoonProfile Runner, see moon_profile_runner/src-tauri/src/displays.rs).
 """
 
 import http.server
@@ -24,8 +23,8 @@ async def _save_config(plugin_module, **overrides):
 
 class TestRunnerClientListDisplays:
     async def test_sends_a_get_to_displays_and_parses_the_json_response(self, plugin_module):
-        # Servidor HTTP real (nao mockado), mesmo espirito do resto do
-        # projeto - confirma o comportamento de verdade do cliente.
+        # Real HTTP server (not mocked), same spirit as the rest of the
+        # project: confirms the client's real behavior.
         received = {}
         fake_displays = [
             {"name": "HDMI-A-1", "connected": True, "enabled": False},
@@ -65,7 +64,7 @@ class TestListHostDisplays:
 
         assert result == {
             "ok": False,
-            "error": "Configure o host do Apollo primeiro (aba Config do Apollo)",
+            "error": "Configure the Apollo host first (Apollo Config tab)",
             "displays": [],
         }
 

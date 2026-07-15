@@ -21,7 +21,7 @@
   },
   {
     "id": "handheld-native",
-    "name": "Handheld Nativo",
+    "name": "Native Handheld",
     "trigger": "handheld",
     "moonlight": {
       "resolution": "1280x800",

@@ -11,14 +11,13 @@ interface SyncProgress {
   gameName: string;
 }
 
-// Barra de progresso propria, CSS puro - os componentes prontos do
-// @decky/ui (ProgressBarWithInfo, ProgressBarItem) estouravam a largura
-// do painel estreito do Quick Access de duas formas diferentes
-// (confirmado por screenshot: primeiro o texto, depois a propria caixa
-// da barra), mesmo com layout="below". Um <div> com largura em
-// porcentagem nao tem esse problema - garantido pelo CSS, nao depende do
-// comportamento interno (possivelmente com bug nesse contexto) do
-// componente da Steam.
+// Custom progress bar, pure CSS: the ready-made @decky/ui components
+// (ProgressBarWithInfo, ProgressBarItem) overflowed the Quick Access
+// panel's narrow width in two different ways (confirmed by screenshot:
+// first the text, then the bar box itself), even with layout="below". A
+// <div> with a percentage width doesn't have that problem, it's guaranteed
+// by CSS and doesn't depend on the internal behavior (possibly buggy in
+// this context) of Steam's component.
 function ProgressBar({ percent }: { percent: number }) {
   return (
     <div style={{ width: "100%", height: "4px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }}>
@@ -52,13 +51,13 @@ export function QuickAccessContent() {
     try {
       const result = await stopStream();
       if (result.ok) {
-        toaster.toast({ title: "MoonProfile", body: "Conexao fechada" });
+        toaster.toast({ title: "MoonProfile", body: "Connection closed" });
       } else {
-        toaster.toast({ title: "MoonProfile - erro", body: result.error ?? "Falha desconhecida" });
+        toaster.toast({ title: "MoonProfile - error", body: result.error ?? "Unknown failure" });
       }
     } catch (e) {
-      console.error("MoonProfile: erro inesperado ao fechar", e);
-      toaster.toast({ title: "MoonProfile - erro inesperado", body: String(e) });
+      console.error("MoonProfile: unexpected error while closing", e);
+      toaster.toast({ title: "MoonProfile - unexpected error", body: String(e) });
     } finally {
       setClosing(false);
     }
@@ -70,8 +69,8 @@ export function QuickAccessContent() {
     try {
       await syncHostGames((current, total, gameName) => setSyncProgress({ current, total, gameName }));
     } catch (e) {
-      console.error("MoonProfile: erro inesperado sincronizando jogos", e);
-      toaster.toast({ title: "MoonProfile - erro inesperado", body: String(e) });
+      console.error("MoonProfile: unexpected error syncing games", e);
+      toaster.toast({ title: "MoonProfile - unexpected error", body: String(e) });
     } finally {
       setSyncing(false);
       setSyncProgress(null);
@@ -82,22 +81,22 @@ export function QuickAccessContent() {
     <>
       <PanelSection title="MoonProfile">
         <PanelSectionRow>
-          <Field label="Contexto detectado">{context}</Field>
+          <Field label="Detected context">{context}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onClose} disabled={closing}>
-            {closing ? "Fechando..." : "Fechar conexao"}
+            {closing ? "Closing..." : "Close connection"}
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onSyncGames} disabled={syncing}>
-            {syncing ? "Sincronizando..." : "Sincronizar jogos do host"}
+            {syncing ? "Syncing..." : "Sync games from host"}
           </ButtonItem>
         </PanelSectionRow>
         {syncProgress && (
           <>
             <PanelSectionRow>
-              <Field label="Sincronizando">{`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}</Field>
+              <Field label="Syncing">{`${syncProgress.gameName} (${syncProgress.current}/${syncProgress.total})`}</Field>
             </PanelSectionRow>
             <PanelSectionRow>
               <ProgressBar percent={(syncProgress.current / syncProgress.total) * 100} />
@@ -106,8 +105,8 @@ export function QuickAccessContent() {
         )}
       </PanelSection>
 
-      <PanelSection title="Perfis">
-        {profiles.length === 0 && <PanelSectionRow>Nenhum perfil configurado</PanelSectionRow>}
+      <PanelSection title="Profiles">
+        {profiles.length === 0 && <PanelSectionRow>No profile configured</PanelSectionRow>}
         {profiles.map((p) => (
           <PanelSectionRow key={p.id}>
             <Field label={p.name}>{p.trigger}</Field>

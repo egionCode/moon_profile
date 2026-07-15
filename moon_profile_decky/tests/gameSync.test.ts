@@ -26,14 +26,14 @@ vi.mock("@decky/api", () => ({
   toaster: { toast: (...args: unknown[]) => toast(...args) },
 }));
 
-// import dinamico depois dos vi.mock (hoisted) - mesmo padrao ja usado em
-// gameCollection.test.ts.
+// Dynamic import after the vi.mock calls (hoisted), same pattern already
+// used in gameCollection.test.ts.
 const { syncHostGames } = await import("../src/gameSync");
 
 const GAMES = [
-  { name: "Jogo A", host_app_id: "111", is_steam: true },
-  { name: "Jogo B", host_app_id: "222", is_steam: true },
-  { name: "Jogo C", host_app_id: "333", is_steam: false },
+  { name: "Game A", host_app_id: "111", is_steam: true },
+  { name: "Game B", host_app_id: "222", is_steam: true },
+  { name: "Game C", host_app_id: "333", is_steam: false },
 ];
 
 describe("syncHostGames progress callback", () => {
@@ -53,19 +53,19 @@ describe("syncHostGames progress callback", () => {
     await syncHostGames(onProgress);
 
     expect(onProgress).toHaveBeenCalledTimes(3);
-    expect(onProgress).toHaveBeenNthCalledWith(1, 1, 3, "Jogo A");
-    expect(onProgress).toHaveBeenNthCalledWith(2, 2, 3, "Jogo B");
-    expect(onProgress).toHaveBeenNthCalledWith(3, 3, 3, "Jogo C");
+    expect(onProgress).toHaveBeenNthCalledWith(1, 1, 3, "Game A");
+    expect(onProgress).toHaveBeenNthCalledWith(2, 2, 3, "Game B");
+    expect(onProgress).toHaveBeenNthCalledWith(3, 3, 3, "Game C");
   });
 
   it("still advances progress for a game whose shortcut creation fails", async () => {
-    ensureGameShortcut.mockImplementationOnce(async () => null); // "Jogo A" falha
+    ensureGameShortcut.mockImplementationOnce(async () => null); // "Game A" fails
     const onProgress = vi.fn();
 
     await syncHostGames(onProgress);
 
     expect(onProgress).toHaveBeenCalledTimes(3);
-    expect(onProgress).toHaveBeenNthCalledWith(1, 1, 3, "Jogo A");
+    expect(onProgress).toHaveBeenNthCalledWith(1, 1, 3, "Game A");
   });
 
   it("works fine without an onProgress callback", async () => {

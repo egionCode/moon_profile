@@ -1,7 +1,7 @@
 """
-runner.py roda como processo solto (exec'ado pela Steam), fora do runtime
-do Decky Loader - importa direto do arquivo em vez de via um pacote
-formal (nao tem __init__.py em runner/).
+runner.py runs as a standalone process (exec'd by Steam), outside the
+Decky Loader runtime: imports directly from the file instead of through a
+formal package (there's no __init__.py in runner/).
 """
 
 import http.server
@@ -59,12 +59,12 @@ class TestRegisterWithRunner:
         assert body["username"] == "u"
         assert body["password"] == "p"
         assert body["display_commands"][0] == "kscreen-doctor output.HDMI-A-1.enable"
-        assert body["restore_commands"][0] == "sleep 1"  # sem enter_bigpicture no fixture, nada de fechar Big Picture
+        assert body["restore_commands"][0] == "sleep 1"  # no enter_bigpicture in the fixture, no closing Big Picture
 
     def test_raises_when_the_runner_is_unreachable(self):
-        # O Runner NAO e' mais opcional - o Apollo nao tem prep-cmd
-        # nenhum, entao sem o Runner a tela nunca troca. main() aborta o
-        # lancamento quando isso levanta (ver comentario na funcao).
+        # The Runner is NOT optional anymore: Apollo has no prep-cmd at
+        # all, so without the Runner the display never switches. main()
+        # aborts the launch when this raises (see the comment on the function).
         config = {"host": "127.0.0.1", "username": "u", "password": "p", "runner_port": 1}
 
         with pytest.raises((urllib.error.URLError, OSError)):

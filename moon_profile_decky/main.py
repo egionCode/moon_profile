@@ -31,17 +31,17 @@ def _streaming_collection_path() -> str:
 
 class RunnerClient:
     """
-    Cliente minimo pro MoonProfile Runner (daemon Tauri/Rust rodando no
-    host, ver moon_profile_runner/) - lista os jogos Steam instalados no
-    host (pros atalhos por jogo - ver gameShortcuts.ts/gameSync.ts) e pede
-    o fechamento da sessao ativa (o Runner sozinho detecta fim de sessao
-    via processo real do SO - Fase 5 do PRD: auto-detach do stream_game
-    entra em modo "placebo" no Apollo depois de 5s, current_app nunca mais
-    reflete a realidade - mas fechar manualmente tambem passa por aqui,
-    reaproveitando a mesma sessao registrada por runner.py). Sem
-    autenticacao - servidor aberto na rede local (decisao explicita: numa
-    LAN domestica ja confiavel, o atrito de colar um token na config nao
-    compensa o ganho de seguranca).
+    Minimal client for the MoonProfile Runner (Tauri/Rust daemon running on
+    the host, see moon_profile_runner/): lists the Steam games installed on
+    the host (for per-game shortcuts, see gameShortcuts.ts/gameSync.ts) and
+    requests the active session to be closed (the Runner detects session
+    end on its own via the real OS process, PRD Phase 5: stream_game's
+    auto-detach falls into "placebo" mode on Apollo after 5s, current_app
+    never reflects reality again, but manually closing also goes through
+    here, reusing the same session registered by runner.py). No
+    authentication: server open on the local network (explicit decision:
+    on an already-trusted home LAN, the friction of pasting a token into
+    the config isn't worth the security gain).
     """
 
     def __init__(self, host: str, port: int):
@@ -53,18 +53,18 @@ class RunnerClient:
             return json.loads(resp.read())
 
     def list_displays(self) -> list:
-        # Monitores/outputs de tela do host (via kscreen-doctor -j, ver
-        # displays.rs) - alimenta o ProfileEditor.tsx com opcoes de
-        # verdade em vez do usuario digitar o nome do output na mao.
+        # Host display outputs (via kscreen-doctor -j, see displays.rs):
+        # feeds ProfileEditor.tsx with real options instead of the user
+        # having to type the output name by hand.
         req = urllib.request.Request(f"{self.base_url}/displays")
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
 
     def close_session(self) -> dict:
-        # Sem corpo - o Runner ja tem host_app_id/credenciais guardados em
-        # memoria desde que runner.py registrou a sessao no lancamento
-        # (ver session.rs). Se nao houver sessao registrada, o Runner
-        # responde {"ok": False, "error": "..."} (nao levanta excecao).
+        # No body: the Runner already has host_app_id/credentials kept in
+        # memory since runner.py registered the session at launch (see
+        # session.rs). If no session is registered, the Runner responds
+        # with {"ok": False, "error": "..."} (it doesn't raise).
         req = urllib.request.Request(f"{self.base_url}/session/close", data=b"", method="POST")
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read())
@@ -82,7 +82,7 @@ class Plugin:
             }
         with open(path) as f:
             config = json.load(f)
-        # setdefault: configs salvos antes dessas features nao tem esse campo.
+        # setdefault: configs saved before these features existed don't have this field.
         config.setdefault("runner_port", RUNNER_PORT)
         return config
 
@@ -90,7 +90,7 @@ class Plugin:
         path = _config_path()
         with open(path, "w") as f:
             json.dump(config, f)
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 - guarda credencial do Apollo
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600: holds the Apollo credential
 
     async def get_profiles(self) -> list:
         path = _profiles_path()
@@ -109,10 +109,10 @@ class Plugin:
             json.dump(profiles, f, indent=2)
 
     async def get_game_shortcuts(self) -> dict:
-        # Mapa host_app_id -> {deck_app_id, name, is_steam} dos atalhos por
-        # jogo ja criados (ver gameShortcuts.ts/gameSync.ts) - arquivo de
-        # verdade em vez de so' localStorage, pra dar controle/visibilidade
-        # real sobre o que foi criado (e alimentar a aba "Jogos" da UI).
+        # Map of host_app_id -> {deck_app_id, name, is_steam} for the
+        # per-game shortcuts already created (see gameShortcuts.ts/gameSync.ts):
+        # a real file instead of just localStorage, to give real control and
+        # visibility over what was created (and feed the "Games" tab in the UI).
         path = _game_shortcuts_path()
         if not os.path.exists(path):
             return {}
@@ -124,10 +124,10 @@ class Plugin:
             json.dump(shortcuts, f, indent=2)
 
     async def get_streaming_collection_id(self):
-        # Id persistido da colecao "Streaming" (ver gameCollection.ts) -
-        # nao depende so' da busca por tag a cada sincronizacao: o tag e'
-        # derivado do nome exibido, quebra se o usuario renomear a colecao
-        # manualmente na Steam; o id sobrevive a isso.
+        # Persisted id of the "Streaming" collection (see gameCollection.ts):
+        # doesn't rely solely on the tag lookup on every sync, since the tag
+        # is derived from the displayed name and breaks if the user renames
+        # the collection manually in Steam; the id survives that.
         path = _streaming_collection_path()
         if not os.path.exists(path):
             return None
@@ -139,32 +139,32 @@ class Plugin:
             json.dump({"collection_id": collection_id}, f)
 
     async def get_logs(self, lines: int) -> str:
-        # decky.DECKY_PLUGIN_LOG e' o arquivo da sessao ATUAL (nome com
-        # timestamp, calculado uma vez no import do modulo "decky") - o
-        # loader mantem so os 4 mais recentes em DECKY_PLUGIN_LOG_DIR,
-        # apagando o resto sozinho.
+        # decky.DECKY_PLUGIN_LOG is the CURRENT session's file (name with a
+        # timestamp, computed once on import of the "decky" module): the
+        # loader keeps only the 4 most recent in DECKY_PLUGIN_LOG_DIR,
+        # deleting the rest on its own.
         try:
             with open(decky.DECKY_PLUGIN_LOG) as f:
                 all_lines = f.readlines()
-            return "".join(all_lines[-lines:]) if all_lines else "(log vazio)"
+            return "".join(all_lines[-lines:]) if all_lines else "(empty log)"
         except OSError as e:
-            return f"Nao consegui ler o log: {e}"
+            return f"Could not read the log: {e}"
 
     async def detect_context(self) -> str:
         return detect_context()
 
     async def stop_stream(self) -> dict:
-        # O Runner (host) e' quem fecha de verdade - ele ja tem a sessao
-        # registrada por runner.py no lancamento (app_id + credenciais em
-        # memoria), mata o jogo se ainda estiver vivo e restaura a tela
-        # ANTES de avisar o Apollo. O Runner NAO e' mais opcional: o
-        # Apollo nao tem prep-cmd nenhum (nem do, nem undo) - chamar ele
-        # direto sem o Runner so' derrubaria a conexao sem restaurar nada,
-        # entao um erro aqui e' reportado como erro de verdade, nao um
-        # fallback silencioso.
+        # The Runner (host) is the one that actually closes things: it
+        # already has the session registered by runner.py at launch
+        # (app_id + credentials in memory), kills the game if it's still
+        # alive, and restores the display BEFORE notifying Apollo. The
+        # Runner is NOT optional anymore: Apollo has no prep-cmd at all
+        # (neither do nor undo), calling it directly without the Runner
+        # would just drop the connection without restoring anything, so
+        # an error here is reported as a real error, not a silent fallback.
         config = await self.get_config()
         if not config.get("host"):
-            return {"ok": False, "error": "Configure o host do Apollo primeiro"}
+            return {"ok": False, "error": "Configure the Apollo host first"}
 
         host = config["host"]
 
@@ -172,20 +172,20 @@ class Plugin:
             client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
             result = client.close_session()
             if not result.get("ok"):
-                decky.logger.error(f"Runner nao conseguiu fechar a sessao: {result.get('error')}")
+                decky.logger.error(f"Runner failed to close the session: {result.get('error')}")
             return result
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.error(f"Falha ao falar com o MoonProfile Runner pra fechar a sessao: {e}")
-            return {"ok": False, "error": f"Nao consegui falar com o MoonProfile Runner: {e}"}
+            decky.logger.error(f"Failed to talk to the MoonProfile Runner to close the session: {e}")
+            return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}"}
 
     async def list_host_games(self) -> dict:
-        # Chamado pelo frontend (gameSync.ts) pro botao "Sincronizar jogos
-        # do host" - lista os jogos Steam instalados no host via Runner,
-        # pra criar um atalho por jogo no Deck (ver gameShortcuts.ts).
+        # Called by the frontend (gameSync.ts) for the "Sync host games"
+        # button: lists the Steam games installed on the host via the
+        # Runner, to create a per-game shortcut on the Deck (see gameShortcuts.ts).
         config = await self.get_config()
         host = config.get("host")
         if not host:
-            return {"ok": False, "error": "Configure o host do Apollo primeiro (aba Config do Apollo)", "games": []}
+            return {"ok": False, "error": "Configure the Apollo host first (Apollo Config tab)", "games": []}
 
         try:
             client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
@@ -196,32 +196,31 @@ class Plugin:
                 "runner_path": os.path.join(decky.DECKY_PLUGIN_DIR, "runner", "runner.py"),
             }
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.error(f"Falha ao listar jogos do MoonProfile Runner: {e}")
-            return {"ok": False, "error": f"Nao consegui falar com o MoonProfile Runner: {e}", "games": []}
+            decky.logger.error(f"Failed to list games from the MoonProfile Runner: {e}")
+            return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}", "games": []}
 
     async def list_host_displays(self) -> dict:
-        # Chamado pelo ProfileEditor.tsx pra popular o select de
-        # "Output alvo" e a lista de outputs a desabilitar com os
-        # monitores de verdade do host, em vez do usuario digitar o
-        # nome na mao.
+        # Called by ProfileEditor.tsx to populate the "Target output"
+        # select and the list of outputs to disable with the host's real
+        # monitors, instead of the user typing the name by hand.
         config = await self.get_config()
         host = config.get("host")
         if not host:
-            return {"ok": False, "error": "Configure o host do Apollo primeiro (aba Config do Apollo)", "displays": []}
+            return {"ok": False, "error": "Configure the Apollo host first (Apollo Config tab)", "displays": []}
 
         try:
             client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
             displays = client.list_displays()
             return {"ok": True, "displays": displays}
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
-            decky.logger.error(f"Falha ao listar monitores do MoonProfile Runner: {e}")
-            return {"ok": False, "error": f"Nao consegui falar com o MoonProfile Runner: {e}", "displays": []}
+            decky.logger.error(f"Failed to list displays from the MoonProfile Runner: {e}")
+            return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}", "displays": []}
 
     async def _main(self):
-        decky.logger.info("MoonProfile carregado")
+        decky.logger.info("MoonProfile loaded")
 
     async def _unload(self):
-        decky.logger.info("MoonProfile descarregado")
+        decky.logger.info("MoonProfile unloaded")
 
     async def _uninstall(self):
-        decky.logger.info("MoonProfile desinstalado")
+        decky.logger.info("MoonProfile uninstalled")

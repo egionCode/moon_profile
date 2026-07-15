@@ -1,10 +1,10 @@
 """
-stop_stream() so' fala com o MoonProfile Runner - ele ja sabe qual
-app_id/credenciais usar (registrados por runner.py no lancamento, ver
-session.rs), mata o jogo se ainda estiver vivo e restaura a tela ANTES de
-avisar o Apollo. O Runner NAO e' mais opcional: o Apollo nao tem prep-cmd
-nenhum (nem do, nem undo), entao nao ha' fallback sensato pra chamar ele
-direto - um erro aqui e' reportado como erro de verdade.
+stop_stream() only talks to the MoonProfile Runner: it already knows which
+app_id/credentials to use (registered by runner.py at launch, see
+session.rs), kills the game if it's still alive, and restores the display
+BEFORE notifying Apollo. The Runner is NOT optional anymore: Apollo has no
+prep-cmd at all (neither do nor undo), so there's no sensible fallback to
+call it directly, an error here is reported as a real error.
 """
 
 import http.server
@@ -38,7 +38,7 @@ class FakeRunnerClientNoSession:
         pass
 
     def close_session(self):
-        return {"ok": False, "error": "Nenhuma sessao registrada no Runner"}
+        return {"ok": False, "error": "No session registered with the Runner"}
 
 
 class FakeRunnerClientUnreachable:
@@ -64,12 +64,12 @@ class TestStopStreamUsesTheRunner:
 
         result = await plugin_module.Plugin().stop_stream()
 
-        assert result == {"ok": False, "error": "Nenhuma sessao registrada no Runner"}
+        assert result == {"ok": False, "error": "No session registered with the Runner"}
 
     async def test_reports_an_error_when_the_runner_is_unreachable(self, plugin_module, monkeypatch):
-        # Sem fallback pro Apollo direto - ele nao tem prep-cmd nenhum,
-        # chamar ele sem o Runner so' derrubaria a conexao sem restaurar a
-        # tela nem matar o jogo.
+        # No fallback to calling Apollo directly: it has no prep-cmd at
+        # all, calling it without the Runner would just drop the
+        # connection without restoring the display or killing the game.
         await _save_config(plugin_module)
         monkeypatch.setattr(plugin_module, "RunnerClient", FakeRunnerClientUnreachable)
 
@@ -81,15 +81,15 @@ class TestStopStreamUsesTheRunner:
     async def test_requires_a_configured_host_before_trying_anything(self, plugin_module):
         result = await plugin_module.Plugin().stop_stream()
 
-        assert result == {"ok": False, "error": "Configure o host do Apollo primeiro"}
+        assert result == {"ok": False, "error": "Configure the Apollo host first"}
 
 
 class TestRunnerClientCloseSession:
     async def test_sends_a_post_to_session_close_and_parses_the_json_response(self, plugin_module):
-        # Servidor HTTP real (nao mockado) rodando numa porta livre local -
-        # confirma o comportamento de verdade do cliente (metodo, path,
-        # parsing da resposta), mesmo espirito do resto do projeto (testar
-        # contra o SO/rede real quando viavel em vez de so' mockar).
+        # Real HTTP server (not mocked) running on a free local port:
+        # confirms the client's real behavior (method, path, response
+        # parsing), same spirit as the rest of the project (test against
+        # the real OS/network when feasible instead of just mocking).
         received = {}
 
         class Handler(http.server.BaseHTTPRequestHandler):

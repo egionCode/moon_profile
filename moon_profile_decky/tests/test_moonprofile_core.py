@@ -32,8 +32,8 @@ class TestDetectContext:
         assert detect_context(str(drm_root)) == "docked"
 
     def test_handheld_when_external_output_exists_but_disconnected(self, tmp_path):
-        # regressao real: "eDP-1" contem "DP" como substring - sem excluir
-        # eDP explicitamente, isso sempre voltava "docked".
+        # real regression: "eDP-1" contains "DP" as a substring, without
+        # explicitly excluding eDP, this always returned "docked".
         drm_root = tmp_path / "drm"
         _write_drm_output(drm_root, "card0-eDP-1", "connected")
         _write_drm_output(drm_root, "card0-HDMI-A-1", "disconnected")
@@ -87,10 +87,11 @@ class TestBuildDisplayCommands:
         assert not any("ydotool" in c for c in commands)
 
     def test_moves_the_cursor_to_the_bottom_right_corner_when_enabled(self):
-        # achado real: alguns jogos (FIFA) prendem o cursor no meio da
-        # tela mesmo jogando so' de controle - ydotool e' o unico jeito de
-        # mover o cursor no Wayland sem apoio do compositor (KWin nao
-        # deixa escrever workspace.cursorPos nessa versao do Plasma).
+        # real finding: some games (FIFA) lock the cursor in the middle of
+        # the screen even while playing with a controller only, ydotool is
+        # the only way to move the cursor on Wayland without compositor
+        # support (KWin won't let you write workspace.cursorPos on this
+        # Plasma version).
         host_cfg = {
             "target_output": "HDMI-A-1",
             "resolution": "1920x1080",
@@ -128,8 +129,8 @@ class TestBuildDisplayCommands:
 
 class TestBuildRestoreCommands:
     def test_does_not_close_bigpicture_by_default(self):
-        # so' faz sentido fechar o Big Picture no fechamento se o perfil
-        # de fato abriu ele no lancamento (enter_bigpicture) - ver
+        # it only makes sense to close Big Picture on closing if the
+        # profile actually opened it at launch (enter_bigpicture), see
         # build_display_commands.
         host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": []}
 
@@ -146,9 +147,10 @@ class TestBuildRestoreCommands:
         assert commands[1] == "sleep 2"
 
     def test_has_no_pkill_or_long_sleep_steps(self):
-        # diferenca chave vs build_prep_cmd: nada de matar processo nem
-        # sleep 20 - o jogo ja foi confirmado morto antes de chamar isso
-        # (watchdog do Runner), o periodo de graca nao serve pra nada aqui.
+        # key difference vs build_prep_cmd: no killing processes or
+        # sleep 20, the game has already been confirmed dead before
+        # calling this (Runner's watchdog), the grace period serves no
+        # purpose here.
         host_cfg = {"target_output": "HDMI-A-1", "disable_outputs": ["DP-2"]}
 
         commands = build_restore_commands(host_cfg)
@@ -184,7 +186,7 @@ class TestClassifyApolloError:
 
         message = classify_apollo_error("192.168.1.6", error)
 
-        assert "senha" in message.lower()
+        assert "password" in message.lower()
 
     def test_unexpected_http_status_includes_the_code(self):
         error = urllib.error.HTTPError("url", 500, "Internal Server Error", {}, None)
@@ -195,12 +197,12 @@ class TestClassifyApolloError:
 
     def test_non_json_response_mentions_the_host(self):
         try:
-            json.loads("nao e json")
+            json.loads("not json")
         except json.JSONDecodeError as error:
             message = classify_apollo_error("192.168.1.6", error)
             assert "192.168.1.6" in message
             return
-        pytest.fail("json.loads deveria ter lancado JSONDecodeError")
+        pytest.fail("json.loads should have raised JSONDecodeError")
 
     def test_unreachable_host_mentions_the_host(self):
         error = OSError("connection refused")

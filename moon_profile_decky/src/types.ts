@@ -1,7 +1,7 @@
 export interface MoonlightConfig {
   resolution: string; // ex: "3840x2160"
   fps: number; // ex: 60
-  bitrate: number; // em kbps, ex: 150000
+  bitrate: number; // in kbps, ex: 150000
   codec: "HEVC" | "AV1" | "H264";
   hdr: boolean;
 }
@@ -13,15 +13,15 @@ export interface HostConfig {
   hdr: boolean;
   wcg: boolean; // Wide Color Gamut
   disable_outputs: string[]; // ex: ["DP-3"]
-  // Manda o cursor pro canto inferior direito do output alvo no
-  // lancamento (via ydotool, ver build_display_commands em
-  // moonprofile_core.py) - alguns jogos (ex: FIFA) prendem o cursor no
-  // meio da tela do host mesmo jogando so' de controle.
+  // Sends the cursor to the bottom-right corner of the target output on
+  // launch (via ydotool, see build_display_commands in
+  // moonprofile_core.py), some games (ex: FIFA) trap the cursor in the
+  // middle of the host screen even while playing with a controller only.
   move_cursor_to_corner?: boolean;
-  // Entra em Big Picture no host ao lancar, sai antes de mudar a
-  // resolucao no fechamento (ver build_display_commands/
-  // build_restore_commands) - util pra quem usa o proprio host como
-  // HTPC/TV.
+  // Enters Big Picture on the host when launching, exits before changing
+  // the resolution on close (see build_display_commands/
+  // build_restore_commands), useful for those who use the host itself as
+  // an HTPC/TV.
   enter_bigpicture?: boolean;
 }
 
@@ -35,12 +35,13 @@ export interface Profile {
 
 export interface Config {
   host: string; // ex: "192.168.1.6"
-  username: string; // credencial admin do Apollo
-  password: string; // credencial admin do Apollo
-  // MoonProfile Runner (daemon Tauri/Rust no host, Fase 5) - suplementa a
-  // deteccao de fim de sessao que o Apollo nao consegue fazer sozinho.
-  // Sem autenticacao (servidor aberto na LAN, decisao explicita). Roda na
-  // MESMA maquina que o Apollo - so' a porta muda, o host e' "host" acima.
+  username: string; // Apollo admin credential
+  password: string; // Apollo admin credential
+  // MoonProfile Runner (Tauri/Rust daemon on the host, Phase 5),
+  // supplements the end-of-session detection that Apollo can't do on its
+  // own. No authentication (server open on the LAN, explicit decision).
+  // Runs on the SAME machine as Apollo, only the port changes, the host is
+  // "host" above.
   runner_port: number;
 }
 
@@ -53,9 +54,9 @@ export interface StreamResult {
   launch_env?: Record<string, string>;
 }
 
-// Um jogo listado pelo MoonProfile Runner (ver moon_profile_runner/src-tauri/
-// src/games.rs) - Estagio A: so' jogos Steam reais (is_steam sempre true por
-// enquanto, non-Steam fica pro Estagio B).
+// A game listed by the MoonProfile Runner (see moon_profile_runner/src-tauri/
+// src/games.rs), Stage A: only real Steam games (is_steam always true for
+// now, non-Steam is left for Stage B).
 export interface HostGame {
   name: string;
   host_app_id: string;
@@ -69,9 +70,9 @@ export interface ListGamesResult {
   error?: string;
 }
 
-// Um monitor/output de tela do host (via kscreen-doctor -j, ver
-// moon_profile_runner/src-tauri/src/displays.rs) - alimenta o select de
-// "Output alvo" e a lista de outputs a desabilitar no ProfileEditor.tsx.
+// A host display/output (via kscreen-doctor -j, see
+// moon_profile_runner/src-tauri/src/displays.rs), feeds the "Target
+// output" select and the list of outputs to disable in ProfileEditor.tsx.
 export interface HostDisplay {
   name: string; // ex: "HDMI-A-1"
   connected: boolean;
@@ -84,10 +85,10 @@ export interface ListDisplaysResult {
   error?: string;
 }
 
-// Um atalho por jogo ja criado no Deck - persistido em
-// game_shortcuts.json (ver main.py), chave e' o host_app_id. Alimenta a
-// aba "Jogos" (grid) alem de servir pra gameShortcuts.ts nao recriar
-// atalho que ja existe.
+// A per-game shortcut already created on the Deck, persisted in
+// game_shortcuts.json (see main.py), keyed by host_app_id. Feeds the
+// "Games" tab (grid) besides being used by gameShortcuts.ts to avoid
+// recreating a shortcut that already exists.
 export interface GameShortcutEntry {
   deck_app_id: number;
   name: string;

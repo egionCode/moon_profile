@@ -1,26 +1,27 @@
-// Orquestra a sincronizacao "um atalho por jogo do host" - Estagio A dos
-// atalhos por jogo (ver docs/prd.md): lista os jogos via MoonProfile
-// Runner, garante um atalho visivel pra cada um (gameShortcuts.ts), aplica
-// capa/hero (gameArtwork.ts, so' pra jogos Steam reais por enquanto) e
-// agrupa tudo na colecao "Streaming" (gameCollection.ts). O mapa de
-// atalhos e' lido e salvo UMA vez so' aqui (nao um roundtrip por jogo) e
-// persiste em game_shortcuts.json (ver main.py) - alimenta a aba "Jogos".
+// Orchestrates the "one shortcut per host game" sync, Stage A of the
+// per-game shortcuts (see docs/prd.md): lists the games via the
+// MoonProfile Runner, ensures a visible shortcut for each one
+// (gameShortcuts.ts), applies capsule/hero art (gameArtwork.ts, only for
+// real Steam games for now), and groups everything into the "Streaming"
+// collection (gameCollection.ts). The shortcut map is read and saved ONCE
+// here (not a roundtrip per game) and persists in game_shortcuts.json
+// (see main.py), feeding the "Games" tab.
 //
-// Sincronizacao manual (botao), nao automatica em background - mesmo
-// espirito incremental do resto do projeto.
+// Manual sync (button), not an automatic background one, same incremental
+// spirit as the rest of the project.
 import { toaster } from "@decky/api";
 import { getGameShortcuts, listHostGames, saveGameShortcuts } from "./api";
 import { ensureGameShortcut } from "./gameShortcuts";
 import { applySteamCdnArtwork } from "./gameArtwork";
 import { addShortcutsToStreamingCollection } from "./gameCollection";
 
-// onProgress (opcional) e' chamado depois de CADA jogo processado (sucesso
-// ou falha - o contador sempre avanca) - alimenta a barra de progresso em
-// QuickAccessContent.tsx. current e' 1-based (1o jogo = current=1).
+// onProgress (optional) is called after EACH game processed (success or
+// failure, the counter always advances), it feeds the progress bar in
+// QuickAccessContent.tsx. current is 1-based (1st game = current=1).
 export async function syncHostGames(onProgress?: (current: number, total: number, gameName: string) => void): Promise<void> {
   const result = await listHostGames();
   if (!result.ok || !result.runner_path) {
-    toaster.toast({ title: "MoonProfile - erro", body: result.error ?? "Falha desconhecida" });
+    toaster.toast({ title: "MoonProfile - error", body: result.error ?? "Unknown failure" });
     return;
   }
 
@@ -40,7 +41,7 @@ export async function syncHostGames(onProgress?: (current: number, total: number
       game.is_steam,
     );
     if (shortcutAppId === null) {
-      console.error(`MoonProfile: falha ao criar atalho pra "${game.name}" (${game.host_app_id})`);
+      console.error(`MoonProfile: failed to create shortcut for "${game.name}" (${game.host_app_id})`);
       continue;
     }
     deckAppIds.push(shortcutAppId);
@@ -51,18 +52,18 @@ export async function syncHostGames(onProgress?: (current: number, total: number
   }
 
   await saveGameShortcuts(shortcuts);
-  // uma chamada so' com todos os appids - o dedup contra quem ja' esta' na
-  // colecao acontece dentro de addShortcutsToStreamingCollection.
+  // A single call with all the appids, the dedup against what's already
+  // in the collection happens inside addShortcutsToStreamingCollection.
   const collectionOk = await addShortcutsToStreamingCollection(deckAppIds);
   if (!collectionOk) {
     toaster.toast({
-      title: "MoonProfile - aviso",
-      body: 'Jogos sincronizados, mas falhou ao organizar na colecao "Streaming" (ver logs)',
+      title: "MoonProfile - warning",
+      body: 'Games synced, but failed to organize into the "Streaming" collection (see logs)',
     });
   }
 
   toaster.toast({
     title: "MoonProfile",
-    body: `${created} de ${result.games.length} jogos sincronizados`,
+    body: `${created} of ${result.games.length} games synced`,
   });
 }

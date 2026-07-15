@@ -7,21 +7,21 @@ interface ApolloConfigSectionProps {
   onSave: () => void;
 }
 
-// Aba "Config do Apollo" da sidenav de Configuracoes (SettingsPage.tsx) -
-// so' host/usuario/senha, com Salvar proprio. O estado ("config") e' dono
-// do SettingsPage, nao daqui - assim trocar de aba sem salvar nao perde
-// edicoes feitas na aba de posicionamento do botao (as duas mexem no MESMO
-// objeto Config, que e' salvo inteiro de uma vez so no backend).
+// "Apollo Config" tab of the Settings sidenav (SettingsPage.tsx). Just
+// host/username/password, with its own Save. The ("config") state is owned
+// by SettingsPage, not here, so switching tabs without saving does not lose
+// edits made on the button-positioning tab (both work on the SAME Config
+// object, which is saved whole in one go on the backend).
 export function ApolloConfigSection({ config, setConfig, onSave }: ApolloConfigSectionProps) {
   return (
     <>
       <PanelSection>
         <PanelSectionRow>
           <DialogBodyText>
-            Essas sao as mesmas credenciais de admin que voce usa pra entrar no painel web do
-            Apollo (o servidor de streaming rodando no seu PC/host). O plugin usa a API do Apollo
-            com elas pra configurar a tela do host e iniciar as sessoes de streaming automaticamente
-            - nada e enviado pra fora da sua rede local.
+            These are the same admin credentials you use to sign in to the Apollo web panel
+            (the streaming server running on your PC/host). The plugin uses the Apollo API
+            with them to configure the host display and start streaming sessions automatically.
+            Nothing is sent outside your local network.
           </DialogBodyText>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -33,14 +33,14 @@ export function ApolloConfigSection({ config, setConfig, onSave }: ApolloConfigS
         </PanelSectionRow>
         <PanelSectionRow>
           <TextField
-            label="Usuario"
+            label="Username"
             value={config.username}
             onChange={(e) => setConfig({ ...config, username: e.target.value })}
           />
         </PanelSectionRow>
         <PanelSectionRow>
           <TextField
-            label="Senha"
+            label="Password"
             bIsPassword
             value={config.password}
             onChange={(e) => setConfig({ ...config, password: e.target.value })}
@@ -51,7 +51,7 @@ export function ApolloConfigSection({ config, setConfig, onSave }: ApolloConfigS
       <PanelSection>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onSave}>
-            Salvar
+            Save
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
