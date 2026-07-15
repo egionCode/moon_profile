@@ -312,7 +312,12 @@ this, the data we'd be reading simply doesn't reflect reality.
   restart-on-failure and `journalctl --user` logs for free. Also a
   regular applications menu entry (`packaging/moon-profile-runner.desktop`,
   no longer tied to autostart). Packaged for the AUR (`packaging/PKGBUILD`,
-  `-git` package).
+  `-git` package). Pacman/yay run as root, so they can't safely enable a
+  systemd `--user` unit for the logged-in user (wrong session, wrong
+  D-Bus, wrong `XDG_RUNTIME_DIR`) - `autostart.rs` has the app enable
+  itself the first time it's launched by hand instead (idempotent, and
+  it's running inside the right session by then), the `.install`
+  scriptlet's message is just a manual fallback.
 
 ### Per-game shortcuts generated from the Runner (replaced the game-screen button)
 

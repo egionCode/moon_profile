@@ -1,4 +1,5 @@
 mod apollo;
+mod autostart;
 mod displays;
 mod games;
 mod server;
@@ -36,6 +37,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|_app| {
+            // Best-effort: register ourselves for autostart on future logins
+            // the first time someone runs the app (see autostart.rs) - the
+            // AUR package can't do this from its own install scriptlet
+            // (pacman runs as root, not the logged-in user's systemd --user
+            // instance), but we're already inside the right session here.
+            autostart::ensure_enabled();
+
             // The HTTP server + session watchdog run on their own thread +
             // tokio runtime, separate from Tauri's event loop (which stays
             // on the main thread handling the tray/window). No token/pairing
