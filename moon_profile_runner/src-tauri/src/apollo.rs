@@ -1,14 +1,15 @@
-// Cliente minimo pra API REST do Apollo, usado so' pelo fechamento
-// autonomo de sessao (ver session.rs) - o Runner roda no MESMO host que o
-// Apollo, entao fala com ele via loopback, sem precisar do endereco LAN
-// que o Deck usa.
+// Cliente minimo pra API REST do Apollo, usado so' pelo fechamento de
+// sessao (ver session.rs) - o Runner roda no MESMO host que o Apollo,
+// entao fala com ele via loopback, sem precisar do endereco LAN que o
+// Deck usa.
 //
 // Mesmo comportamento que moonprofile_core.py:ApolloClient (Python, usado
 // por runner.py/main.py): login por cookie de sessao (POST /api/login,
 // nao HTTP Basic Auth - este fork nao segue o que a doc antiga do
-// Sunshine descreve) e fechamento via POST /api/apps/close, que dispara o
-// "undo" do prep-cmd em ordem reversa no lado do Apollo (kscreen-doctor +
-// pkill do jogo).
+// Sunshine descreve). O Apollo NAO tem prep-cmd configurado (decisao
+// explicita - ver session.rs/moonprofile_core.py:build_display_commands)
+// - POST /api/apps/close so' derruba a conexao/stream em si, matar o
+// jogo e trocar a tela e' 100% responsabilidade do Runner.
 //
 // Certificado autoassinado do Apollo - aceita certificado invalido de
 // proposito (danger_accept_invalid_certs), igual o Python faz com
@@ -67,25 +68,6 @@ pub async fn close_session_at(base_url: &str, username: &str, password: &str) ->
     classify_status(close_resp.status())?;
 
     Ok(())
-}
-
-// Reconfigura o app "SteamGame" com um payload OPACO (montado por
-// runner.py, ver _quick_close_payload em runner.py) - normalmente com
-// "prep-cmd": [] pra neutralizar o array de undo do Apollo antes do
-// fechamento autonomo (ver session.rs). O Runner nao interpreta o
-// payload, so' repassa pro Apollo - quem decide o que vai nele e' o
-// Deck, que ja tem todo o contexto (uuid, perfil) na hora do lancamento.
-pub async fn save_app_at(base_url: &str, username: &str, password: &str, payload: &serde_json::Value) -> Result<(), String> {
-    let client = build_client()?;
-    login(&client, base_url, username, password).await?;
-
-    let resp = client
-        .post(format!("{base_url}/api/apps"))
-        .json(payload)
-        .send()
-        .await
-        .map_err(|_| unreachable_message(base_url))?;
-    classify_status(resp.status())
 }
 
 #[cfg(test)]
@@ -156,39 +138,5 @@ mod tests {
             result,
             Err("Nao consegui alcancar o Apollo em http://127.0.0.1:0 - confira se o host esta ligado".to_string())
         );
-    }
-
-    #[tokio::test]
-    async fn save_app_at_posts_the_payload_as_is_to_api_apps() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/login"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/api/apps"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-
-        let payload = json!({"name": "SteamGame", "prep-cmd": []});
-        let result = save_app_at(&mock_server.uri(), "user", "pass", &payload).await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn save_app_at_reports_wrong_credentials_on_401() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/login"))
-            .respond_with(ResponseTemplate::new(401))
-            .mount(&mock_server)
-            .await;
-
-        let result = save_app_at(&mock_server.uri(), "user", "wrong", &json!({})).await;
-
-        assert_eq!(result, Err("Usuario ou senha do Apollo incorretos".to_string()));
     }
 }

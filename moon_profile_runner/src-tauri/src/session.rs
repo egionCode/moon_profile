@@ -1,23 +1,34 @@
-// Fechamento autonomo de sessao: runner.py (Deck) registra a sessao ao
-// configurar o Apollo (app_id + credenciais, EM MEMORIA, nunca gravadas
-// em disco no host) logo antes de dar exec no Moonlight - dai um
-// watchdog em background (mesma runtime tokio do servidor HTTP, ver
-// lib.rs) fica de olho no processo via sysinfo (server.rs:
-// is_app_id_running) e, quando detecta que o jogo fechou, chama o Apollo
-// sozinho (login + /api/apps/close, que dispara o "undo" do prep-cmd em
-// ordem reversa - kscreen-doctor + pkill do jogo), sem precisar do Deck
-// pedir nada. Cobre os dois fluxos de lancamento (botao antigo e atalho
-// novo por jogo), ja que os dois passam pelo mesmo runner.py.
+// Ciclo de vida da sessao, 100% controlado pelo Runner - o Apollo NAO tem
+// mais prep-cmd nenhum (nem "do" nem "undo"), decisao explicita pra
+// deixa-lo mais simples ("plug and play": so' precisa saber conectar e
+// rodar o "cmd") e dar ao Deck controle total sobre a tela do host. Quem
+// liga a tela no lancamento (display_commands) e desliga no fechamento
+// (restore_commands) e' sempre este modulo, rodando os comandos direto
+// via shell.
 //
-// "Fechar conexao" manual (QuickAccessContent.tsx) tambem bate aqui
-// primeiro (POST /session/close) - so cai pro caminho antigo (Deck
-// falando com o Apollo direto, ver main.py:stop_stream) se o Runner nao
-// tiver sessao registrada ou estiver inalcancavel (ele e' opcional).
+// runner.py (Deck) registra a sessao ao configurar o Apollo (app_id +
+// credenciais, EM MEMORIA, nunca gravadas em disco no host, mais os
+// comandos de tela pre-calculados a partir do perfil) - o registro em si
+// ja' roda os display_commands de forma SINCRONA (so' responde depois),
+// entao o Runner deixou de ser opcional: sem ele, a tela nunca troca.
+//
+// Depois de registrada, um watchdog em background (mesma runtime tokio
+// do servidor HTTP, ver lib.rs) fica de olho no processo via sysinfo
+// (server.rs: is_app_id_running) e, quando detecta que o jogo fechou
+// sozinho, restaura a tela e avisa o Apollo pra derrubar a conexao - sem
+// precisar do Deck pedir nada. Cobre os dois fluxos de lancamento (botao
+// antigo e atalho novo por jogo), ja que os dois passam pelo mesmo
+// runner.py.
+//
+// "Fechar conexao" manual (QuickAccessContent.tsx -> POST /session/close)
+// mata o jogo (se ainda estiver vivo, com SIGTERM + espera adaptativa +
+// SIGKILL se preciso) antes de restaurar a tela e avisar o Apollo -
+// diferente do watchdog, que so' age depois de confirmar que o processo
+// ja morreu sozinho.
 
 use axum::extract::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -35,12 +46,14 @@ pub struct ActiveSession {
     // Runner so' os executa, sem interpretar o significado de cada um
     // (ver build_restore_commands em moonprofile_core.py).
     pub restore_commands: Vec<String>,
-    // Payload OPACO pra reconfigurar o app "SteamGame" com prep-cmd
-    // vazio antes do fechamento autonomo - evita que o Apollo rode de
-    // novo (mais devagar, com os pkill/sleep-20 do array original) um
-    // trabalho que o watchdog ja fez sozinho via restore_commands acima
-    // (ver _quick_close_payload em runner.py).
-    pub quick_close_payload: Value,
+    // Bug real encontrado no device: a primeira checagem do watchdog pode
+    // acontecer ANTES do jogo terminar de abrir (Steam demora um tempo
+    // variavel pra spawnar o processo "reaper ... AppId=<id>" - Proton,
+    // shader cache, etc) - sem esse campo, "ainda nao apareceu" e "ja
+    // fechou" ficam indistinguiveis, e o watchdog fechava um jogo que
+    // estava so' CARREGANDO. So' comeca a considerar "fechou" depois de
+    // ter visto o processo rodando de verdade pelo menos uma vez.
+    pub confirmed_running: bool,
 }
 
 pub type SessionState = Arc<Mutex<Option<ActiveSession>>>;
@@ -55,10 +68,14 @@ pub struct RegisterSessionRequest {
     app_id: String,
     username: String,
     password: String,
+    // Comandos de LIGAR a tela (kscreen-doctor: enable/mode/hdr/disable
+    // dos outros outputs) - rodados AGORA MESMO, antes de responder (ver
+    // register_session), pra garantir que a tela ja esta' no estado certo
+    // quando o runner.py (Deck) prosseguir pro exec do Moonlight.
+    #[serde(default)]
+    display_commands: Vec<String>,
     #[serde(default)]
     restore_commands: Vec<String>,
-    #[serde(default)]
-    quick_close_payload: Value,
 }
 
 #[derive(Serialize)]
@@ -67,33 +84,96 @@ pub struct CloseResponse {
     error: Option<String>,
 }
 
+// Roda um comando de shell (string unica, mesmo formato que o Apollo
+// usava no prep-cmd) - best-effort: uma falha aqui so' e' logada, nao
+// interrompe os comandos seguintes (ex: kscreen-doctor tentando desligar
+// um output que ja esta' desligado, nao e' fatal).
+async fn run_shell_command(cmd: &str) {
+    match tokio::process::Command::new("sh").arg("-c").arg(cmd).status().await {
+        Ok(status) if !status.success() => {
+            println!("[{}] [session] comando saiu com {status}: {cmd}", timestamp());
+        }
+        Err(error) => {
+            println!("[{}] [session] falha ao rodar comando ({error}): {cmd}", timestamp());
+        }
+        Ok(_) => {}
+    }
+}
+
+async fn run_shell_commands(commands: &[String]) {
+    for cmd in commands {
+        println!("[{}] [session] rodando: {cmd}", timestamp());
+        run_shell_command(cmd).await;
+    }
+}
+
+// So' usado pelo fechamento MANUAL - o watchdog nunca chama isso, porque
+// so' age depois de confirmar que o processo JA morreu sozinho (nada pra
+// matar). Aqui o jogo pode genuinamente ainda estar rodando, entao pede
+// SIGTERM e espera ATE 20s - mas poll a cada 1s e sai assim que o
+// processo morrer, em vez de sempre esperar os 20s inteiros como o
+// array de undo antigo do Apollo fazia. So' manda SIGKILL se o periodo de
+// graca inteiro passar sem o processo sair sozinho.
+async fn kill_game_process(app_id: &str) {
+    if !is_app_id_running(app_id) {
+        println!("[{}] [session] app_id={app_id} ja nao esta rodando, nada pra matar", timestamp());
+        return;
+    }
+
+    println!("[{}] [session] mandando SIGTERM (AppId={app_id})", timestamp());
+    run_shell_command(&format!("pkill -TERM -f AppId={app_id}")).await;
+
+    let grace_period = Duration::from_secs(20);
+    let start = tokio::time::Instant::now();
+    while is_app_id_running(app_id) {
+        if start.elapsed() >= grace_period {
+            println!(
+                "[{}] [session] app_id={app_id} nao saiu sozinho no periodo de graca - forcando com SIGKILL",
+                timestamp()
+            );
+            run_shell_command(&format!("pkill -KILL -f AppId={app_id}")).await;
+            return;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    println!("[{}] [session] app_id={app_id} saiu sozinho depois do SIGTERM", timestamp());
+}
+
+// Registra a sessao - roda os display_commands DE FORMA SINCRONA antes
+// de responder (por isso runner.py so' prossegue pro exec do Moonlight
+// depois que esta chamada retorna: garante que a tela ja esta' no
+// estado certo quando o stream comecar).
 pub async fn register_session(
     Extension(state): Extension<SessionState>,
     Json(req): Json<RegisterSessionRequest>,
 ) -> Json<CloseResponse> {
-    println!("[{}] [session] registrada: app_id={}", timestamp(), req.app_id);
+    println!("[{}] [session] registrando app_id={} - ligando a tela...", timestamp(), req.app_id);
+    run_shell_commands(&req.display_commands).await;
+    println!("[{}] [session] tela ligada, sessao registrada: app_id={}", timestamp(), req.app_id);
+
     let mut guard = state.lock().await;
     *guard = Some(ActiveSession {
         app_id: req.app_id,
         username: req.username,
         password: req.password,
         restore_commands: req.restore_commands,
-        quick_close_payload: req.quick_close_payload,
+        confirmed_running: false,
     });
     Json(CloseResponse { ok: true, error: None })
 }
 
-// Fechamento IMEDIATO (manual, "Fechar conexao") - nao espera o watchdog
-// detectar nada, usa a sessao registrada (se existir) pra chamar o Apollo
-// agora mesmo.
+// Fechamento IMEDIATO (manual, "Fechar conexao") - mata o jogo se ainda
+// estiver vivo (SIGTERM + espera adaptativa + SIGKILL, ver
+// kill_game_process), restaura a tela, e so' entao avisa o Apollo pra
+// derrubar a conexao.
 pub async fn close_session_now(
     Extension(state): Extension<SessionState>,
     Extension(ApolloBaseUrl(base_url)): Extension<ApolloBaseUrl>,
     Extension(notifier): Extension<EventNotifier>,
 ) -> Json<CloseResponse> {
-    let session = { state.lock().await.clone().map(|s| (s.username, s.password)) };
+    let session = state.lock().await.clone();
 
-    let Some((username, password)) = session else {
+    let Some(session) = session else {
         println!("[{}] [session] fechamento manual pedido, mas nao ha sessao registrada", timestamp());
         return Json(CloseResponse {
             ok: false,
@@ -101,8 +181,11 @@ pub async fn close_session_now(
         });
     };
 
-    println!("[{}] [session] fechamento manual pedido - chamando o Apollo", timestamp());
-    match apollo::close_session_at(&base_url, &username, &password).await {
+    println!("[{}] [session] fechamento manual pedido - matando o jogo (se vivo) e restaurando a tela", timestamp());
+    kill_game_process(&session.app_id).await;
+    run_shell_commands(&session.restore_commands).await;
+
+    match apollo::close_session_at(&base_url, &session.username, &session.password).await {
         Ok(()) => {
             println!("[{}] [session] Apollo fechou a sessao com sucesso (fechamento manual)", timestamp());
             *state.lock().await = None;
@@ -116,39 +199,14 @@ pub async fn close_session_now(
     }
 }
 
-// Roda cada comando de restauracao (kscreen-doctor/fechar Big Picture,
-// pre-calculados por runner.py) direto via shell, sequencialmente - o
-// mesmo formato de string unica que o Apollo ja usa nos prep-cmd
-// (ver moonprofile_core.py:build_restore_commands). Best-effort: um
-// comando falhando (ex: output ja desligado) nao impede os proximos de
-// rodar - loga e segue, mesma filosofia de fail-open do resto do projeto.
-async fn run_restore_commands(commands: &[String]) {
-    for cmd in commands {
-        println!("[{}] [session] watchdog: rodando comando de restauracao: {cmd}", timestamp());
-        match tokio::process::Command::new("sh").arg("-c").arg(cmd).status().await {
-            Ok(status) if !status.success() => {
-                println!("[{}] [session] watchdog: comando de restauracao saiu com {status}: {cmd}", timestamp());
-            }
-            Err(error) => {
-                println!("[{}] [session] watchdog: falha ao rodar comando de restauracao ({error}): {cmd}", timestamp());
-            }
-            Ok(_) => {}
-        }
-    }
-}
-
 // Roda pra sempre numa task em background (ver lib.rs) - a cada
 // intervalo, checa se a sessao registrada ainda esta rodando de verdade
 // (sysinfo, o SO nao mente mesmo quando o Apollo mente). Se morreu,
-// restaura a tela IMEDIATAMENTE (direto via shell, sem esperar o Apollo -
-// o array de undo original do Apollo tem um "sleep 20" de proposito, pra
-// dar tempo de um jogo AINDA VIVO se fechar sozinho, o que nao se aplica
-// aqui: o processo ja foi confirmado morto) e so' depois avisa o Apollo
-// (reconfigurado com prep-cmd vazio via quick_close_payload, pra ele nao
-// repetir esse trabalho mais devagar) - fechamento em ~1s em vez de
-// ~25-30s. Extraida como funcao separada (nao so' o loop inline) pra
-// poder testar UMA passada sem precisar de sleep/timing de verdade no
-// teste.
+// restaura a tela e avisa o Apollo - fechamento em ~1s, ja que nao ha'
+// processo pra matar (o watchdog so' age DEPOIS de confirmar a morte) nem
+// prep-cmd nenhum no Apollo pra esperar. Extraida como funcao separada
+// (nao so' o loop inline) pra poder testar UMA passada sem precisar de
+// sleep/timing de verdade no teste.
 //
 // Se o Apollo responder com erro (ex: credenciais erradas, ou host fora
 // do ar momentaneamente) na etapa final de close, a sessao fica
@@ -166,8 +224,39 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
     };
 
     let running = is_app_id_running(&session.app_id);
-    println!("[{}] [session] watchdog: checando app_id={}, rodando={running}", timestamp(), session.app_id);
+    println!(
+        "[{}] [session] watchdog: checando app_id={}, rodando={running}, confirmado_antes={}",
+        timestamp(),
+        session.app_id,
+        session.confirmed_running
+    );
+
     if running {
+        if !session.confirmed_running {
+            // primeira vez que vemos o processo de verdade - marca antes
+            // de sair, pra proxima passada ja saber que uma queda agora
+            // e' fechamento de verdade, nao so' o jogo ainda carregando.
+            if let Some(s) = state.lock().await.as_mut() {
+                s.confirmed_running = true;
+            }
+        }
+        return false;
+    }
+
+    if !session.confirmed_running {
+        // Bug real encontrado no device: a primeira checagem do watchdog
+        // pode acontecer ANTES do jogo terminar de abrir (Steam demora um
+        // tempo variavel pra spawnar o processo com "AppId=" no cmdline -
+        // Proton, shader cache, etc). Sem essa checagem, "ainda nao
+        // apareceu" e "ja fechou" ficam indistinguiveis - o watchdog
+        // fechava (e desfazia a tela) um jogo que estava so' carregando.
+        // So' considera "fechou" depois de ter visto rodando de verdade
+        // pelo menos uma vez.
+        println!(
+            "[{}] [session] watchdog: app_id={} ainda nao foi visto rodando (jogo carregando?) - nao fecha ainda",
+            timestamp(),
+            session.app_id
+        );
         return false;
     }
 
@@ -176,13 +265,7 @@ pub async fn check_and_maybe_close_session(state: &SessionState, base_url: &str,
         timestamp(),
         session.app_id
     );
-    run_restore_commands(&session.restore_commands).await;
-
-    if session.quick_close_payload != Value::Null {
-        if let Err(error) = apollo::save_app_at(base_url, &session.username, &session.password, &session.quick_close_payload).await {
-            println!("[{}] [session] watchdog: falha ao neutralizar o undo do Apollo ({error}) - fechando mesmo assim", timestamp());
-        }
-    }
+    run_shell_commands(&session.restore_commands).await;
 
     match apollo::close_session_at(base_url, &session.username, &session.password).await {
         Ok(()) => {
@@ -213,24 +296,25 @@ pub async fn watch_sessions(state: SessionState, base_url: String, notifier: Eve
 mod tests {
     use super::*;
     use crate::test_support::FakeGameProcess;
-    use serde_json::json;
     use tokio::sync::mpsc;
-    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn empty_state() -> SessionState {
         Arc::new(Mutex::new(None))
     }
 
-    // Sessao sem restore_commands/quick_close_payload - pros testes que
-    // nao se importam com essa parte (ja cobertos separadamente abaixo).
+    // Sessao sem restore_commands, ja com confirmed_running=true (simula
+    // um jogo que ja foi visto rodando antes) - pros testes que nao se
+    // importam com a corrida de inicializacao (coberta separadamente
+    // abaixo).
     fn plain_session(app_id: &str, username: &str, password: &str) -> ActiveSession {
         ActiveSession {
             app_id: app_id.to_string(),
             username: username.to_string(),
             password: password.to_string(),
             restore_commands: Vec::new(),
-            quick_close_payload: Value::Null,
+            confirmed_running: true,
         }
     }
 
@@ -256,6 +340,97 @@ mod tests {
         assert!(!closed);
         assert!(state.lock().await.is_some());
         drop(fake);
+    }
+
+    // Bug real encontrado no device: a primeira checagem do watchdog
+    // aconteceu so' 4.2s depois do registro, achando "nao esta rodando" -
+    // o jogo (Ghostwire: Tokyo) ainda estava CARREGANDO, o processo com
+    // "AppId=" no cmdline (reaper do Steam) ainda nao tinha aparecido.
+    // Sem a checagem de confirmed_running, isso fechava (e desfazia a
+    // tela) um jogo que nunca chegou a fechar de verdade.
+    #[tokio::test]
+    async fn does_not_close_a_session_that_was_never_seen_running_yet() {
+        let state = empty_state();
+        *state.lock().await = Some(ActiveSession {
+            app_id: "900020".to_string(), // nenhum processo - simula "ainda carregando"
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            restore_commands: Vec::new(),
+            confirmed_running: false,
+        });
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let closed = check_and_maybe_close_session(&state, "http://127.0.0.1:0", &tx).await;
+
+        assert!(!closed);
+        let guard = state.lock().await;
+        assert!(guard.is_some(), "sessao nao deveria ter sido limpa - jogo pode so' estar carregando");
+        assert!(!guard.as_ref().unwrap().confirmed_running);
+    }
+
+    #[tokio::test]
+    async fn marks_confirmed_running_the_first_time_the_process_is_seen_alive() {
+        let fake = FakeGameProcess::spawn("900021");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let state = empty_state();
+        *state.lock().await = Some(ActiveSession {
+            app_id: "900021".to_string(),
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            restore_commands: Vec::new(),
+            confirmed_running: false,
+        });
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let closed = check_and_maybe_close_session(&state, "http://127.0.0.1:0", &tx).await;
+
+        assert!(!closed);
+        assert!(state.lock().await.as_ref().unwrap().confirmed_running);
+        drop(fake);
+    }
+
+    #[tokio::test]
+    async fn closes_once_confirmed_running_and_then_the_process_disappears() {
+        // simula o ciclo de verdade: watchdog ve o jogo vivo primeiro
+        // (confirmed_running vira true), so' DEPOIS ele fecha de fato.
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/login"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/apps/close"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let fake = FakeGameProcess::spawn("900022");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let state = empty_state();
+        *state.lock().await = Some(ActiveSession {
+            app_id: "900022".to_string(),
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            restore_commands: Vec::new(),
+            confirmed_running: false,
+        });
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let closed_while_alive = check_and_maybe_close_session(&state, &mock_server.uri(), &tx).await;
+        assert!(!closed_while_alive);
+        assert!(state.lock().await.as_ref().unwrap().confirmed_running);
+
+        drop(fake);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let closed_after_exit = check_and_maybe_close_session(&state, &mock_server.uri(), &tx).await;
+
+        assert!(closed_after_exit);
+        assert!(state.lock().await.is_none());
+        assert_eq!(rx.try_recv(), Ok(RunnerEvent::SessionClosed));
     }
 
     #[tokio::test]
@@ -306,23 +481,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_session_stores_the_session_in_state() {
+    async fn register_session_runs_display_commands_before_storing_the_session() {
+        // Efeito colateral observavel (escreve num arquivo temporario) em
+        // vez de so' confiar no retorno - confirma que o shell de verdade
+        // roda o comando de tela, nao so' que a funcao nao deu erro.
+        let marker_file = tempfile::NamedTempFile::new().unwrap();
+        let marker_path = marker_file.path().to_str().unwrap().to_string();
+
         let state = empty_state();
         let req = RegisterSessionRequest {
             app_id: "123".to_string(),
             username: "user".to_string(),
             password: "pass".to_string(),
+            display_commands: vec![format!("echo ligado > {marker_path}")],
             restore_commands: vec!["echo restaurando".to_string()],
-            quick_close_payload: json!({"prep-cmd": []}),
         };
 
         let response = register_session(Extension(state.clone()), Json(req)).await;
 
         assert!(response.0.ok);
+        let contents = std::fs::read_to_string(&marker_path).unwrap();
+        assert_eq!(contents.trim(), "ligado");
+
         let guard = state.lock().await;
         assert_eq!(guard.as_ref().unwrap().app_id, "123");
         assert_eq!(guard.as_ref().unwrap().restore_commands, vec!["echo restaurando".to_string()]);
-        assert_eq!(guard.as_ref().unwrap().quick_close_payload, json!({"prep-cmd": []}));
+        assert!(!guard.as_ref().unwrap().confirmed_running);
     }
 
     #[tokio::test]
@@ -342,10 +526,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn close_session_now_closes_immediately_regardless_of_process_state() {
-        // fechamento MANUAL - fecha mesmo que o processo ainda esteja
-        // rodando (diferente do watchdog, que so' fecha quando detecta que
-        // ja morreu sozinho).
+    async fn close_session_now_kills_the_game_when_it_is_still_running() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/login"))
@@ -375,19 +556,19 @@ mod tests {
         assert!(response.0.ok);
         assert!(state.lock().await.is_none());
         assert_eq!(rx.try_recv(), Ok(RunnerEvent::SessionClosed));
+        // pkill -TERM (mandado por kill_game_process) deve ter derrubado
+        // o processo fake de verdade - confirma comportamento real, nao
+        // so' que a funcao retornou sem erro.
+        assert!(!is_app_id_running("900013"));
         drop(fake);
     }
 
     #[tokio::test]
-    async fn watchdog_runs_the_restore_commands_before_closing() {
-        // Comando com efeito colateral observavel (escreve num arquivo
-        // temporario) em vez de so' confiar no retorno da funcao - testa
-        // que o shell de verdade roda o comando, nao so' que a funcao nao
-        // deu erro (mesma filosofia de testar comportamento real do resto
-        // do projeto).
-        let marker_file = tempfile::NamedTempFile::new().unwrap();
-        let marker_path = marker_file.path().to_str().unwrap().to_string();
-
+    async fn close_session_now_skips_killing_when_the_game_already_exited() {
+        // Sem processo fake nenhum - "AppId=900017" nunca existiu.
+        // kill_game_process deve perceber isso e nao tentar nenhum pkill
+        // (nao ha' teste direto pro pkill em si aqui, so' que o fluxo
+        // completa normalmente sem travar).
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/login"))
@@ -401,94 +582,17 @@ mod tests {
             .await;
 
         let state = empty_state();
-        *state.lock().await = Some(ActiveSession {
-            app_id: "900014".to_string(), // nenhum processo com esse AppId - "ja fechou"
-            username: "user".to_string(),
-            password: "pass".to_string(),
-            restore_commands: vec![format!("echo restaurado > {marker_path}")],
-            quick_close_payload: Value::Null,
-        });
-        let (tx, _rx) = mpsc::unbounded_channel();
+        *state.lock().await = Some(plain_session("900017", "user", "pass"));
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
-        let closed = check_and_maybe_close_session(&state, &mock_server.uri(), &tx).await;
+        let response = close_session_now(
+            Extension(state.clone()),
+            Extension(ApolloBaseUrl(mock_server.uri())),
+            Extension(tx),
+        )
+        .await;
 
-        assert!(closed);
-        let contents = std::fs::read_to_string(&marker_path).unwrap();
-        assert_eq!(contents.trim(), "restaurado");
-    }
-
-    #[tokio::test]
-    async fn watchdog_neutralizes_apollo_undo_before_closing_when_a_quick_close_payload_is_set() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/login"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-        // so' aceita o POST /api/apps se o body bater com o payload que
-        // registramos - confirma que o watchdog manda o payload de
-        // verdade, nao um generico.
-        Mock::given(method("POST"))
-            .and(path("/api/apps"))
-            .and(body_partial_json(json!({"prep-cmd": []})))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/api/apps/close"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-
-        let state = empty_state();
-        *state.lock().await = Some(ActiveSession {
-            app_id: "900015".to_string(),
-            username: "user".to_string(),
-            password: "pass".to_string(),
-            restore_commands: Vec::new(),
-            quick_close_payload: json!({"name": "SteamGame", "prep-cmd": []}),
-        });
-        let (tx, _rx) = mpsc::unbounded_channel();
-
-        let closed = check_and_maybe_close_session(&state, &mock_server.uri(), &tx).await;
-
-        // Se o watchdog nao tivesse mandado o POST /api/apps esperado, o
-        // wiremock nao teria mock pra bater e o request falharia - closed
-        // so' vira true se a sequencia toda (restore -> save_app -> close)
-        // funcionou.
-        assert!(closed);
-    }
-
-    #[tokio::test]
-    async fn watchdog_skips_apollo_reconfiguration_when_no_quick_close_payload_was_registered() {
-        // Sessoes registradas sem quick_close_payload (Value::Null, o
-        // default) nao devem tentar reconfigurar o Apollo - so' fecham
-        // direto. expect(0) faz o wiremock derrubar o teste se
-        // POST /api/apps for chamado mesmo assim.
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/login"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/api/apps"))
-            .respond_with(ResponseTemplate::new(200))
-            .expect(0)
-            .mount(&mock_server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/api/apps/close"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&mock_server)
-            .await;
-
-        let state = empty_state();
-        *state.lock().await = Some(plain_session("900016", "user", "pass"));
-        let (tx, _rx) = mpsc::unbounded_channel();
-
-        let closed = check_and_maybe_close_session(&state, &mock_server.uri(), &tx).await;
-
-        assert!(closed);
+        assert!(response.0.ok);
+        assert_eq!(rx.try_recv(), Ok(RunnerEvent::SessionClosed));
     }
 }
