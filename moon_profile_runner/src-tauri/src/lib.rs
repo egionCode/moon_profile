@@ -42,7 +42,12 @@ pub fn run() {
             // AUR package can't do this from its own install scriptlet
             // (pacman runs as root, not the logged-in user's systemd --user
             // instance), but we're already inside the right session here.
-            autostart::ensure_enabled();
+            // Spawned on its own thread (not called inline) so a slow or
+            // hung `systemctl --user` (e.g. session D-Bus not fully up yet
+            // right after login) can never delay the tray icon or HTTP
+            // server from appearing - this is pure bookkeeping, nothing
+            // else depends on it finishing first.
+            std::thread::spawn(autostart::ensure_enabled);
 
             // The HTTP server + session watchdog run on their own thread +
             // tokio runtime, separate from Tauri's event loop (which stays
