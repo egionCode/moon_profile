@@ -172,7 +172,7 @@ export function SettingsPage() {
     {
       title: "Games",
       identifier: "games",
-      content: <GamesGridSection />,
+      content: <GamesGridSection config={config} setConfig={setConfig} onSave={onSaveConfig} />,
     },
     {
       title: "Logs",

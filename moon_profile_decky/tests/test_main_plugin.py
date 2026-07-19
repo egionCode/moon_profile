@@ -57,6 +57,7 @@ class TestConfigDefaults:
 
         assert "runner_host" not in config
         assert config["runner_port"] == plugin_module.RUNNER_PORT
+        assert config["steamgriddb_api_key"] == ""
 
     async def test_loading_an_old_config_file_does_not_reintroduce_runner_host(self, plugin_module, tmp_path):
         import json
@@ -74,3 +75,16 @@ class TestConfigDefaults:
         # get_config doesn't break or require it.
         assert loaded["host"] == "192.168.1.6"
         assert loaded["runner_port"] == plugin.RUNNER_PORT
+
+    async def test_loading_an_old_config_file_gets_a_default_steamgriddb_api_key(self, plugin_module, tmp_path):
+        import json
+        import os
+
+        plugin = plugin_module
+        config_path = os.path.join(plugin.decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
+        with open(config_path, "w") as f:
+            json.dump({"host": "192.168.1.6", "username": "u", "password": "p"}, f)
+
+        loaded = await plugin.Plugin().get_config()
+
+        assert loaded["steamgriddb_api_key"] == ""

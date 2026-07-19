@@ -355,9 +355,34 @@ to Apollo) before exec'ing Moonlight.
   collection (`window.collectionStore`, persisted id to survive manual
   renaming).
 
-**Stage B (to do): non-Steam games.** Parsing of the host's (binary)
-`shortcuts.vdf`, new `steamgriddb_api_key` config field, artwork via
-SteamGridDB (`search_game` by name) instead of the official CDN.
+**Stage B - ✅ implemented: non-Steam games.**
+- `moon_profile_runner/src-tauri/src/games.rs`: parses each Steam user
+  profile's `userdata/<user_id>/config/shortcuts.vdf` (Valve's binary VDF
+  format, via the `steam-vdf-parser` crate, which handles both the text
+  and binary variants), skips hidden shortcuts (`IsHidden`). The stored
+  `appid` is a signed 32-bit int, but Steam treats it as unsigned
+  everywhere it's actually used (the `steam://rungameid/<id>` URL, the
+  `compatdata/<id>` folder name) - confirmed against a real file on a
+  real machine, casting to `u32` before formatting it as `host_app_id` is
+  required. Merged into `list_host_games()` after the Steam-only
+  category filter (non-Steam appids aren't real Store entries, querying
+  them there would just 404).
+- New `steamgriddb_api_key` config field, its own panel in
+  `GamesGridSection.tsx` (rather than `ApolloConfigSection.tsx`, since
+  it's specifically about non-Steam artwork, not Apollo credentials) -
+  free key from https://www.steamgriddb.com/profile/preferences/api.
+- `gameArtwork.ts`: `applySteamGridDbArtwork` (search by name, then
+  grids/heroes/logos/icons endpoints) alongside the existing
+  `applySteamCdnArtwork` for real Steam games - both now cover all 5
+  `SetCustomArtworkForApp` asset types (vertical grid, wide grid, hero,
+  logo, icon), except the CDN path's icon (no reliable fixed URL for
+  it without an extra API call, left unset for real Steam games).
+- Every artwork/sync step is best-effort and never throws - failures
+  (missing API key, no SteamGridDB match, network error,
+  `SetCustomArtworkForApp` itself rejecting) are logged via a new
+  `log_frontend_error` bridge (`main.py`, since frontend `console.error`
+  never reaches `DECKY_PLUGIN_LOG`) instead of stopping the sync loop
+  over the remaining games.
 
 **Stage C - ✅ done: old button removed.** Deleted
 `LibraryAppPatch.tsx`, `GameActionButton.tsx`, `stream.ts`,

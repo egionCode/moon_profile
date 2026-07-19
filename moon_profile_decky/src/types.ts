@@ -43,6 +43,12 @@ export interface Config {
   // Runs on the SAME machine as Apollo, only the port changes, the host is
   // "host" above.
   runner_port: number;
+  // SteamGridDB API key (free, https://www.steamgriddb.com/profile/preferences/api),
+  // used to fetch cover/hero art for non-Steam games synced from the host
+  // (see gameArtwork.ts's applySteamGridDbArtwork) - real Steam games use
+  // the official CDN instead and don't need this. Empty string means
+  // non-Steam games sync without artwork.
+  steamgriddb_api_key: string;
 }
 
 export interface StreamResult {
@@ -55,8 +61,9 @@ export interface StreamResult {
 }
 
 // A game listed by the MoonProfile Runner (see moon_profile_runner/src-tauri/
-// src/games.rs), Stage A: only real Steam games (is_steam always true for
-// now, non-Steam is left for Stage B).
+// src/games.rs) - either a real Steam catalog game or a non-Steam shortcut
+// already added to the host's Steam library (is_steam distinguishes them,
+// since only real Steam games have official CDN artwork available).
 export interface HostGame {
   name: string;
   host_app_id: string;

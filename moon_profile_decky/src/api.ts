@@ -12,6 +12,7 @@ export const detectContext = callable<[], "docked" | "handheld">("detect_context
 export const stopStream = callable<[], StreamResult>("stop_stream");
 
 export const getLogs = callable<[lines: number], string>("get_logs");
+export const logFrontendError = callable<[message: string], void>("log_frontend_error");
 
 export const listHostGames = callable<[], ListGamesResult>("list_host_games");
 export const listHostDisplays = callable<[], ListDisplaysResult>("list_host_displays");

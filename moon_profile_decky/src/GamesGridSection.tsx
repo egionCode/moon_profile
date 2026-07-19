@@ -1,16 +1,17 @@
 // "Games" tab of the Settings sidenav: a grid showing the per-game
 // shortcuts already synced (see gameSync.ts), with cover art when
-// available (only for real Steam games for now, Stage A). Creating a
-// shortcut is still only done via the "Sync games from host" button in
-// Quick Access; the "Clear" button here removes everything (from Steam
-// and from the persisted file).
+// available (real Steam games via the official CDN, non-Steam ones via
+// SteamGridDB if an API key is configured below). Creating a shortcut is
+// still only done via the "Sync games from host" button in Quick Access;
+// the "Clear" button here removes everything (from Steam and from the
+// persisted file).
 import { CSSProperties, useEffect, useState } from "react";
-import { ButtonItem, Focusable, PanelSection, PanelSectionRow } from "@decky/ui";
+import { ButtonItem, DialogBodyText, Focusable, PanelSection, PanelSectionRow, TextField } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { getGameShortcuts, saveGameShortcuts } from "./api";
-import { getImageAsB64, getSteamCapsuleUrl } from "./gameArtwork";
+import { getImageAsB64, getSteamCapsuleUrl, getSteamGridDbCapsuleUrl } from "./gameArtwork";
 import { removeAllGameShortcuts } from "./gameShortcuts";
-import { GameShortcuts } from "./types";
+import { Config, GameShortcuts } from "./types";
 
 const gridStyle: CSSProperties = {
   display: "grid",
@@ -59,25 +60,38 @@ interface GameCardProps {
   hostAppId: string;
   name: string;
   isSteam: boolean;
+  steamgriddbApiKey: string;
 }
 
-function GameCard({ hostAppId, name, isSteam }: GameCardProps) {
+function GameCard({ hostAppId, name, isSteam, steamgriddbApiKey }: GameCardProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isSteam) {
-      return; // non-Steam doesn't have a cover art source yet (Stage B, SteamGridDB)
-    }
     let cancelled = false;
-    getImageAsB64(getSteamCapsuleUrl(hostAppId)).then((data) => {
-      if (!cancelled && data) {
-        setImageSrc(`data:image/jpeg;base64,${data}`);
-      }
-    });
+
+    if (isSteam) {
+      getImageAsB64(getSteamCapsuleUrl(hostAppId)).then((data) => {
+        if (!cancelled && data) {
+          setImageSrc(`data:image/jpeg;base64,${data}`);
+        }
+      });
+    } else if (steamgriddbApiKey) {
+      getSteamGridDbCapsuleUrl(name, steamgriddbApiKey).then((url) => {
+        if (cancelled || !url) {
+          return;
+        }
+        getImageAsB64(url).then((data) => {
+          if (!cancelled && data) {
+            setImageSrc(`data:image/jpeg;base64,${data}`);
+          }
+        });
+      });
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [hostAppId, isSteam]);
+  }, [hostAppId, name, isSteam, steamgriddbApiKey]);
 
   return (
     <div style={cardStyle}>
@@ -89,7 +103,13 @@ function GameCard({ hostAppId, name, isSteam }: GameCardProps) {
   );
 }
 
-export function GamesGridSection() {
+interface GamesGridSectionProps {
+  config: Config;
+  setConfig: (config: Config) => void;
+  onSave: () => void;
+}
+
+export function GamesGridSection({ config, setConfig, onSave }: GamesGridSectionProps) {
   const [shortcuts, setShortcuts] = useState<GameShortcuts>({});
   const [loaded, setLoaded] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -119,29 +139,63 @@ export function GamesGridSection() {
   const entries = Object.entries(shortcuts);
 
   return (
-    <PanelSection>
-      {!loaded && <PanelSectionRow>Loading...</PanelSectionRow>}
-      {loaded && entries.length === 0 && (
+    <>
+      <PanelSection>
         <PanelSectionRow>
-          No games synced yet, use &quot;Sync games from host&quot; in Quick Access.
+          <DialogBodyText>
+            Free API key from{" "}
+            <a href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noreferrer">
+              steamgriddb.com
+            </a>{" "}
+            - only needed for cover/hero art on non-Steam games (real Steam games already get official artwork
+            without it).
+          </DialogBodyText>
         </PanelSectionRow>
-      )}
-      {entries.length > 0 && (
-        <>
+        <PanelSectionRow>
+          <TextField
+            label="SteamGridDB API key"
+            bIsPassword
+            value={config.steamgriddb_api_key}
+            onChange={(e) => setConfig({ ...config, steamgriddb_api_key: e.target.value })}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onSave}>
+            Save
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection>
+        {!loaded && <PanelSectionRow>Loading...</PanelSectionRow>}
+        {loaded && entries.length === 0 && (
           <PanelSectionRow>
-            <Focusable style={gridStyle}>
-              {entries.map(([hostAppId, entry]) => (
-                <GameCard key={hostAppId} hostAppId={hostAppId} name={entry.name} isSteam={entry.is_steam} />
-              ))}
-            </Focusable>
+            No games synced yet, use &quot;Sync games from host&quot; in Quick Access.
           </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={onClear} disabled={clearing}>
-              {clearing ? "Clearing..." : "Clear synced games"}
-            </ButtonItem>
-          </PanelSectionRow>
-        </>
-      )}
-    </PanelSection>
+        )}
+        {entries.length > 0 && (
+          <>
+            <PanelSectionRow>
+              <Focusable style={gridStyle}>
+                {entries.map(([hostAppId, entry]) => (
+                  <GameCard
+                    key={hostAppId}
+                    hostAppId={hostAppId}
+                    name={entry.name}
+                    isSteam={entry.is_steam}
+                    steamgriddbApiKey={config.steamgriddb_api_key}
+                  />
+                ))}
+              </Focusable>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem layout="below" onClick={onClear} disabled={clearing}>
+                {clearing ? "Clearing..." : "Clear synced games"}
+              </ButtonItem>
+            </PanelSectionRow>
+          </>
+        )}
+      </PanelSection>
+    </>
   );
 }

@@ -79,11 +79,13 @@ class Plugin:
                 "username": "",
                 "password": "",
                 "runner_port": RUNNER_PORT,
+                "steamgriddb_api_key": "",
             }
         with open(path) as f:
             config = json.load(f)
         # setdefault: configs saved before these features existed don't have this field.
         config.setdefault("runner_port", RUNNER_PORT)
+        config.setdefault("steamgriddb_api_key", "")
         return config
 
     async def save_config(self, config: dict) -> None:
@@ -149,6 +151,15 @@ class Plugin:
             return "".join(all_lines[-lines:]) if all_lines else "(empty log)"
         except OSError as e:
             return f"Could not read the log: {e}"
+
+    async def log_frontend_error(self, message: str) -> None:
+        # Bridge for frontend-side failures (e.g. gameArtwork.ts's
+        # best-effort CDN/SteamGridDB fetches) to land in the SAME log the
+        # "Logs" tab reads - console.error in the frontend only reaches the
+        # Steam WebHelper's own devtools, decky.logger writes to
+        # DECKY_PLUGIN_LOG (this process, the Python backend), a different
+        # place entirely.
+        decky.logger.error(f"[frontend] {message}")
 
     async def detect_context(self) -> str:
         return detect_context()
