@@ -2285,6 +2285,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "steam-vdf-parser",
  "sysinfo",
  "tauri",
  "tauri-build",
@@ -3752,6 +3753,25 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "steam-vdf-parser"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae729373438271906eb7fe05df9682a83052f6b242e51b30fd7bcdd4d6addc38"
+dependencies = [
+ "foldhash",
+ "hex",
+ "indexmap 2.14.0",
+ "static_assertions",
+ "winnow 0.7.15",
+]
 
 [[package]]
 name = "string_cache"
@@ -5441,6 +5461,9 @@ name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"

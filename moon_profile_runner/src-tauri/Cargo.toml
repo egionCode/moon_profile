@@ -20,38 +20,44 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
-# Notificacao de desktop (KDE/freedesktop) quando o Deck sincroniza jogos.
+# Desktop notification (KDE/freedesktop) when the Deck syncs games.
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Servidor HTTP embutido (fala com o plugin Decky) - tokio proprio numa
-# thread separada, decoupled do event loop do Tauri (ver setup() em lib.rs).
+# Embedded HTTP server (talks to the Decky plugin) - its own tokio on a
+# separate thread, decoupled from Tauri's event loop (see setup() in lib.rs).
 axum = "0.7"
-# "process": pra rodar os comandos de restauracao de tela (kscreen-doctor)
-# direto do watchdog de fechamento autonomo (ver session.rs).
+# "process": to run the screen-restore commands (kscreen-doctor) directly
+# from the autonomous close-session watchdog (see session.rs).
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time", "process"] }
-# Leitura de processos do host - mesmo padrao de matching "AppId=<id>" no
-# cmdline que main.py:_build_prep_cmd ja usa no pkill do undo.
+# Reads host processes - same "AppId=<id>" cmdline matching pattern that
+# main.py:_build_prep_cmd already uses in the undo's pkill.
 sysinfo = "0.32"
-# Parsing do libraryfolders.vdf/appmanifest_*.acf (formato texto VDF/
-# KeyValues da Valve) pra enumerar os jogos Steam instalados no host.
+# Parses libraryfolders.vdf/appmanifest_*.acf (Valve's text VDF/KeyValues
+# format) to enumerate the Steam games installed on the host.
 keyvalues-serde = "0.2"
-# appmanifest_*.acf nao tem campo de categoria (jogo vs software/ferramenta)
-# - so' a API publica da propria Steam (appdetails) diz o "type" de
-# verdade. Tambem usado (feature "cookies") pro fechamento autonomo de
-# sessao falar com o Apollo (cookie de sessao "auth", ver src/apollo.rs).
+# appmanifest_*.acf has no category field (game vs software/tool) - only
+# Steam's own public API (appdetails) has the real "type". Also used
+# (the "cookies" feature) for the autonomous session-close talking to
+# Apollo (session cookie "auth", see src/apollo.rs).
 reqwest = { version = "0.12", features = ["json", "cookies"] }
-# So' pro timestamp nos logs de diagnostico (session.rs/server.rs) - "clock"
-# e' a unica feature necessaria (hora local), sem parsing/timezone extra.
+# Only for the timestamp in diagnostic logs (session.rs/server.rs) -
+# "clock" is the only feature needed (local time), no extra
+# parsing/timezone support.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Parses shortcuts.vdf (Valve's binary VDF format, used for non-Steam
+# games added to the host's Steam library) - handles both the text and
+# binary VDF variants, so it could in principle replace keyvalues-serde
+# too, but that's not worth the churn for now.
+steam-vdf-parser = "0.1"
 
 [dev-dependencies]
-# So' pro ServiceExt::oneshot nos testes (bate direto no Router, sem
-# precisar abrir uma porta TCP de verdade).
+# Only for ServiceExt::oneshot in the tests (hits the Router directly,
+# no need to open a real TCP port).
 tower = { version = "0.5", features = ["util"] }
-# Pastas temporarias pros testes de games.rs (fixture de instalacao Steam fake).
+# Temp folders for games.rs's tests (fake Steam install fixture).
 tempfile = "3"
-# Mocka a API da Steam nos testes - sem isso os testes dependeriam de rede
-# de verdade (lento, instavel, sujeito a rate limit).
+# Mocks the Steam API in tests - without this, tests would depend on a
+# real network (slow, unstable, subject to rate limiting).
 wiremock = "0.6"
 

@@ -117,6 +117,73 @@ pub fn list_steam_games(steam_root: &Path) -> Vec<HostGame> {
     games
 }
 
+// Non-Steam shortcuts (Stage B): live in a separate binary-VDF file per
+// Steam user profile, not under steamapps/ at all -
+// userdata/<user_id>/config/shortcuts.vdf. Enumerates every profile
+// found (a host normally only has one, but nothing stops there being
+// old/extra ones) - fail-open per file, same philosophy as
+// list_steam_games (a missing/corrupt shortcuts.vdf just means "no
+// non-Steam games from this profile", not an error).
+fn shortcuts_vdf_paths(steam_root: &Path) -> Vec<PathBuf> {
+    let userdata_dir = steam_root.join("userdata");
+    let Ok(entries) = fs::read_dir(&userdata_dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path().join("config").join("shortcuts.vdf"))
+        .filter(|path| path.is_file())
+        .collect()
+}
+
+// Pure - parses the shortcuts.vdf bytes already read from disk, kept
+// separate from the file I/O so it can be tested against a hand-built
+// fixture without needing a real Steam profile on the test machine.
+//
+// "appid" is stored as a SIGNED 32-bit int (steam-vdf-parser's I32),
+// but Steam treats it as unsigned everywhere else it matters (the
+// steam://rungameid/<id> URL, the compatdata/<id> folder name) -
+// confirmed against a real shortcuts.vdf on this machine: an entry
+// with appid=I32(-408863985) has its game's compatdata folder named
+// "3886103311", which is exactly `(-408863985i32) as u32`. Casting is
+// required before formatting it as the host_app_id string, otherwise
+// runner.py would embed a negative number in a URL that expects an
+// unsigned one.
+//
+// Only "AppName"/"appid"/"IsHidden" are read - Exe/StartDir/icon/etc
+// aren't needed here, Steam already knows how to launch this shortcut
+// from its own appid once steam://rungameid/<id> reaches it (same
+// mechanism as real Steam games, see moonprofile_core.py).
+fn parse_shortcuts_vdf(bytes: &[u8]) -> Vec<HostGame> {
+    let Ok(vdf) = steam_vdf_parser::parse_shortcuts(bytes) else {
+        return Vec::new();
+    };
+    let Some(shortcuts) = vdf.get_obj(&["shortcuts"]) else {
+        return Vec::new();
+    };
+
+    shortcuts
+        .values()
+        .filter_map(|entry| {
+            let is_hidden = entry.get_i32(&["IsHidden"]).unwrap_or(0) != 0;
+            if is_hidden {
+                return None;
+            }
+            let name = entry.get_str(&["AppName"])?.to_string();
+            let appid = entry.get_i32(&["appid"])? as u32;
+            Some(HostGame { name, host_app_id: appid.to_string(), is_steam: false })
+        })
+        .collect()
+}
+
+pub fn list_non_steam_games(steam_root: &Path) -> Vec<HostGame> {
+    shortcuts_vdf_paths(steam_root)
+        .into_iter()
+        .filter_map(|path| fs::read(&path).ok())
+        .flat_map(|bytes| parse_shortcuts_vdf(&bytes))
+        .collect()
+}
+
 // appmanifest_*.acf has no category field - "Aseprite", "Blender" etc
 // (real software sold on Steam, not an internal Valve tool) pass through
 // is_valve_tooling's name filter without issue, because they aren't
@@ -207,8 +274,15 @@ async fn filter_to_games_only(candidates: Vec<HostGame>, base_url: &str) -> Vec<
 }
 
 pub async fn list_host_games() -> Vec<HostGame> {
-    let candidates = list_steam_games(&default_steam_root());
-    filter_to_games_only(candidates, STEAM_STORE_BASE_URL).await
+    let steam_root = default_steam_root();
+    let candidates = list_steam_games(&steam_root);
+    let mut games = filter_to_games_only(candidates, STEAM_STORE_BASE_URL).await;
+    // Non-Steam shortcuts don't have a real Store appid to query
+    // (filter_to_games_only's categories check would just 404 against
+    // Steam's API for these), and the user already chose to add each one
+    // as a shortcut deliberately - no gameplay-category filtering needed.
+    games.extend(list_non_steam_games(&steam_root));
+    games
 }
 
 #[cfg(test)]
