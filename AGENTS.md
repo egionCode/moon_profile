@@ -2,6 +2,27 @@
 
 Rules for any agent (Claude Code or other) working in this monorepo.
 
+## The codebase is English-only
+
+Comments, doc comments, docstrings, log messages, and user-facing UI
+text (labels, toasts, error messages) are all in English, no exceptions
+- this was a deliberate one-time migration (everything used to be in
+Portuguese). Don't reintroduce Portuguese in new code, even though
+conversations with the maintainer happen in Portuguese.
+
+## Frontend calls to external services never block or throw
+
+Any TypeScript code that calls an external API (SteamGridDB, the Steam
+CDN, etc., see `gameArtwork.ts`) must be best-effort: a failed fetch, a
+missing match, or the API itself rejecting must never throw past that
+call site nor stop whatever loop/sync it's part of (see
+`gameArtwork.ts`'s `applyArtwork`/`applyAll`, and `gameSync.ts`'s
+`applyArtworkSafely` wrapping it again just in case). Report failures via
+`logFrontendError` (`api.ts` -> `main.py:log_frontend_error` ->
+`decky.logger`), not `console.error` - the frontend's console only
+reaches the Steam WebHelper's own devtools, never the plugin log the
+"Logs" tab in Settings actually reads.
+
 ## The Runner (Rust) controls everything that touches the host
 
 Any control over the HOST operating system (screens/monitors via
@@ -50,6 +71,14 @@ mock would have caught).
   that's how the real bugs here were found.
 - Every "pure" helper function (no I/O) also gets its own fast unit test
   separate from the integration test (e.g. `cmd_arg_matches_app_id_cases`).
+- `install.sh` (manual/local install) and `packaging/PKGBUILD` (AUR) both
+  independently install the same things (binary, applications menu
+  entry, systemd `--user` unit) - there's no shared source of truth
+  between them. Whenever the install/autostart mechanism changes, update
+  BOTH (plus `packaging/moon-profile-runner-git.install`'s message if
+  relevant) in the same change, not just the one you happen to be
+  testing - a real bug shipped this session (stale autostart file, then
+  a missing systemd unit install) came from exactly this drift.
 
 ## moon_profile_decky/ (Decky plugin - TypeScript + Python)
 
