@@ -109,6 +109,40 @@ async fn displays_route_returns_a_json_array() {
     let _displays: Vec<crate::displays::HostDisplay> = serde_json::from_slice(&bytes).unwrap();
 }
 
+#[tokio::test]
+async fn health_route_returns_ok_true() {
+    let response = test_app()
+        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["ok"], true);
+}
+
+// Doesn't assert on a specific MAC - that depends on the real network
+// interfaces of whatever machine runs this test (detect_primary_mac
+// itself is already covered against fixtures in tests/power.rs). Only
+// confirms the route is wired up and returns the expected shape.
+//
+// There is deliberately no test here for POST /system/shutdown - see the
+// comment on the `shutdown` handler in server.rs and the accepted test
+// gap in docs/prd.md Phase 6.
+#[tokio::test]
+async fn system_mac_route_returns_valid_json() {
+    let response = test_app()
+        .oneshot(Request::builder().uri("/system/mac").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(body.get("mac").is_some());
+}
+
 // "when a sync call is received" - the handler sends an event to the
 // channel on every GET /games, which lib.rs listens to in order to fire
 // the real desktop notification (with a real AppHandle, out of scope

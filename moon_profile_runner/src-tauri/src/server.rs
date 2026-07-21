@@ -10,11 +10,14 @@
 // token into the Deck's config isn't worth the security gain).
 
 use axum::{extract::Extension, routing::get, routing::post, Json, Router};
+use serde::Serialize;
+use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tokio::sync::mpsc;
 
 use crate::displays::{list_displays, HostDisplay};
 use crate::games::{list_host_games, HostGame};
+use crate::power::{detect_primary_mac, run_shutdown};
 use crate::session::{close_session_now, register_session, ApolloBaseUrl, SessionState};
 
 // Only for the diagnostic prints (register/watchdog/close) - without
@@ -99,10 +102,63 @@ async fn displays() -> Json<Vec<HostDisplay>> {
     Json(list_displays())
 }
 
+#[derive(Serialize)]
+struct HealthResponse {
+    ok: bool,
+}
+
+// GET /health - cheap liveness probe for the Deck's host-status polling
+// (QuickAccessContent.tsx). Deliberately NOT reusing /games, which fires
+// a GamesSynced notification and indirectly touches kscreen-doctor via
+// list_host_games - polling that every few seconds just to check "is the
+// host up" would be noisy and wasteful.
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse { ok: true })
+}
+
+#[derive(Serialize)]
+struct MacResponse {
+    mac: Option<String>,
+}
+
+// GET /system/mac - the primary NIC's MAC address, for the Deck to save
+// and later use to build a Wake-on-LAN magic packet
+// (build_magic_packet in moonprofile_core.py) once the host is off and
+// /health can no longer be reached.
+async fn system_mac() -> Json<MacResponse> {
+    Json(MacResponse { mac: detect_primary_mac("/sys/class/net") })
+}
+
+#[derive(Serialize)]
+struct ShutdownResponse {
+    ok: bool,
+}
+
+// POST /system/shutdown - responds immediately, then powers off in the
+// background after a short delay so the HTTP response actually makes it
+// out over the network before the machine goes down (same
+// respond-before-side-effect ordering already used by
+// close_session_now/the watchdog in session.rs). Deliberately has no
+// integration test that goes through this route for real (see
+// docs/prd.md Phase 6's accepted test gap): running it would power off
+// whatever machine executes `cargo test`. Only the pure shutdown_command()
+// underneath is unit-tested (tests/power.rs).
+async fn shutdown() -> Json<ShutdownResponse> {
+    println!("[{}] [power] shutdown requested via HTTP", timestamp());
+    tokio::spawn(async {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        run_shutdown();
+    });
+    Json(ShutdownResponse { ok: true })
+}
+
 pub fn app(notify: EventNotifier, session_state: SessionState, apollo_base_url: ApolloBaseUrl) -> Router {
     Router::new()
         .route("/games", get(games))
         .route("/displays", get(displays))
+        .route("/health", get(health))
+        .route("/system/mac", get(system_mac))
+        .route("/system/shutdown", post(shutdown))
         .route("/session/register", post(register_session))
         .route("/session/close", post(close_session_now))
         .layer(Extension(notify))

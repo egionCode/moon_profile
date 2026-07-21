@@ -2,6 +2,7 @@ mod apollo;
 mod autostart;
 mod displays;
 mod games;
+mod power;
 mod server;
 mod session;
 #[cfg(test)]
