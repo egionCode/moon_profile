@@ -1,7 +1,9 @@
 mod apollo;
 mod autostart;
+mod clients;
 mod displays;
 mod games;
+mod ping;
 mod power;
 mod server;
 mod session;
@@ -9,16 +11,45 @@ mod session;
 #[path = "tests/support.rs"]
 mod test_support;
 
+use clients::{ClientsFilePath, ClientsState, KnownClient};
 use server::{run_server, RunnerEvent};
 use session::{watch_sessions, ApolloBaseUrl};
 use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager, WebviewUrl, WebviewWindowBuilder,
+    Manager, State, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{mpsc, Mutex};
+
+// "Clients" section of the Runner's own window (main.js): the list of
+// Decks that have ever connected (see clients.rs), sorted for a stable
+// display order.
+// Tauri requires async commands that borrow an argument (State<'_, ..>
+// here) to return a Result - this one never actually fails, Ok is the
+// only variant ever produced.
+#[tauri::command]
+async fn list_known_clients(clients_state: State<'_, ClientsState>) -> Result<Vec<KnownClient>, ()> {
+    let guard = clients_state.0.lock().await;
+    let mut list: Vec<KnownClient> = guard.values().cloned().collect();
+    list.sort_by(|a, b| a.ip.cmp(&b.ip));
+    Ok(list)
+}
+
+// Called from the window's own 3s polling loop (main.js), NOT from the
+// always-on HTTP server side - so an unreachable Deck only ever slows
+// down this window, never anything the Deck itself is waiting on. The
+// outer timeout guards spawn_blocking (which runs the real `ping`
+// subprocess) against hanging longer than the -W 1 flag alone would
+// suggest, e.g. DNS resolution weirdness.
+#[tauri::command]
+async fn ping_client(ip: String) -> Option<f64> {
+    match tokio::time::timeout(ping::PING_COMMAND_TIMEOUT, tokio::task::spawn_blocking(move || ping::ping_once(&ip))).await {
+        Ok(Ok(latency)) => latency,
+        _ => None,
+    }
+}
 
 fn open_or_focus_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -37,7 +68,20 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![list_known_clients, ping_client])
         .setup(|_app| {
+            // Loaded once at startup (see clients.rs) so Decks seen on a
+            // previous run still show up (as unreachable) even before
+            // they reconnect - persisted under the app's own data dir,
+            // resolved here because this is where the real AppHandle
+            // lives; clients.rs itself only ever touches a plain Path,
+            // same decoupling as session_state/notify below.
+            let clients_dir = _app.path().app_data_dir().expect("failed to resolve the app data dir");
+            std::fs::create_dir_all(&clients_dir).expect("failed to create the app data dir");
+            let clients_file_path = clients_dir.join("clients.json");
+            let clients_state = ClientsState(Arc::new(Mutex::new(clients::load_known_clients(&clients_file_path))));
+            _app.manage(clients_state.clone());
+
             // Best-effort: register ourselves for autostart on future logins
             // the first time someone runs the app (see autostart.rs) - the
             // AUR package can't do this from its own install scriptlet
@@ -72,6 +116,8 @@ pub fn run() {
             std::thread::spawn({
                 let notify_tx = notify_tx.clone();
                 let session_state = session_state.clone();
+                let clients_state = clients_state.clone();
+                let clients_file_path = ClientsFilePath(clients_file_path.clone());
                 move || {
                     let rt = tokio::runtime::Builder::new_multi_thread()
                         .enable_all()
@@ -95,7 +141,13 @@ pub fn run() {
                         apollo::DEFAULT_APOLLO_BASE_URL.to_string(),
                         notify_tx.clone(),
                     ));
-                    rt.block_on(run_server(notify_tx, session_state, ApolloBaseUrl(apollo::DEFAULT_APOLLO_BASE_URL.to_string())));
+                    rt.block_on(run_server(
+                        notify_tx,
+                        session_state,
+                        ApolloBaseUrl(apollo::DEFAULT_APOLLO_BASE_URL.to_string()),
+                        clients_state,
+                        clients_file_path,
+                    ));
                 }
             });
 

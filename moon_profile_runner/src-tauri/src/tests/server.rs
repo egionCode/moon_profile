@@ -1,11 +1,17 @@
 use super::*;
+use crate::clients::ClientsState;
 use crate::test_support::FakeGameProcess;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
+
+fn empty_clients() -> (ClientsState, ClientsFilePath) {
+    (ClientsState(Arc::new(Mutex::new(HashMap::new()))), ClientsFilePath(std::env::temp_dir().join("moon_profile_runner_tests_unused_clients.json")))
+}
 
 // Unit test, fast - doesn't need a real process, just covers the pure
 // matching logic (the shared-prefix edge cases).
@@ -61,7 +67,8 @@ async fn is_app_id_running_does_not_match_a_different_app_id_with_a_shared_prefi
 fn test_app() -> Router {
     let (tx, _rx) = mpsc::unbounded_channel();
     let session_state: SessionState = Arc::new(Mutex::new(None));
-    app(tx, session_state, ApolloBaseUrl("http://127.0.0.1:0".to_string()))
+    let (clients_state, clients_file_path) = empty_clients();
+    app(tx, session_state, ApolloBaseUrl("http://127.0.0.1:0".to_string()), clients_state, clients_file_path)
 }
 
 // Only confirms the route is registered and returns valid JSON - the
@@ -153,8 +160,9 @@ async fn system_mac_route_returns_valid_json() {
 async fn games_route_sends_a_games_synced_event() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let session_state: SessionState = Arc::new(Mutex::new(None));
+    let (clients_state, clients_file_path) = empty_clients();
 
-    let _ = app(tx, session_state, ApolloBaseUrl("http://127.0.0.1:0".to_string()))
+    let _ = app(tx, session_state, ApolloBaseUrl("http://127.0.0.1:0".to_string()), clients_state, clients_file_path)
         .oneshot(
             Request::builder()
                 .uri("/games")

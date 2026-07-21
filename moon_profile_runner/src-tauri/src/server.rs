@@ -9,12 +9,14 @@
 // decision: on an already-trusted home LAN, the friction of pasting a
 // token into the Deck's config isn't worth the security gain).
 
-use axum::{extract::Extension, routing::get, routing::post, Json, Router};
+use axum::{extract::Extension, middleware, routing::get, routing::post, Json, Router};
 use serde::Serialize;
+use std::net::SocketAddr;
 use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tokio::sync::mpsc;
 
+use crate::clients::{record_client_middleware, ClientsFilePath, ClientsState};
 use crate::displays::{list_displays, HostDisplay};
 use crate::games::{list_host_games, HostGame};
 use crate::power::{detect_primary_mac, run_shutdown};
@@ -152,7 +154,13 @@ async fn shutdown() -> Json<ShutdownResponse> {
     Json(ShutdownResponse { ok: true })
 }
 
-pub fn app(notify: EventNotifier, session_state: SessionState, apollo_base_url: ApolloBaseUrl) -> Router {
+pub fn app(
+    notify: EventNotifier,
+    session_state: SessionState,
+    apollo_base_url: ApolloBaseUrl,
+    clients_state: ClientsState,
+    clients_file_path: ClientsFilePath,
+) -> Router {
     Router::new()
         .route("/games", get(games))
         .route("/displays", get(displays))
@@ -161,20 +169,38 @@ pub fn app(notify: EventNotifier, session_state: SessionState, apollo_base_url: 
         .route("/system/shutdown", post(shutdown))
         .route("/session/register", post(register_session))
         .route("/session/close", post(close_session_now))
+        // Added BEFORE (so it ends up INNER relative to) the Extension
+        // layers below: axum layers added later wrap ones added earlier,
+        // so this middleware only runs once ClientsState/ClientsFilePath
+        // have already been inserted into the request and are visible to
+        // it via the Extension extractor.
+        .layer(middleware::from_fn(record_client_middleware))
         .layer(Extension(notify))
         .layer(Extension(session_state))
         .layer(Extension(apollo_base_url))
+        .layer(Extension(clients_state))
+        .layer(Extension(clients_file_path))
 }
 
-pub async fn run_server(notify: EventNotifier, session_state: SessionState, apollo_base_url: ApolloBaseUrl) {
+pub async fn run_server(
+    notify: EventNotifier,
+    session_state: SessionState,
+    apollo_base_url: ApolloBaseUrl,
+    clients_state: ClientsState,
+    clients_file_path: ClientsFilePath,
+) {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:47991")
         .await
         .expect("failed to bind runner HTTP server to port 47991");
     println!("[{}] [server] MoonProfile Runner listening on 0.0.0.0:47991", timestamp());
 
-    axum::serve(listener, app(notify, session_state, apollo_base_url))
-        .await
-        .expect("runner HTTP server crashed");
+    // with_connect_info: gives record_client_middleware the caller's real
+    // IP (ConnectInfo<SocketAddr>) on every request - without this, the
+    // extractor would always come back empty even for real network
+    // clients, not just in tests.
+    let app = app(notify, session_state, apollo_base_url, clients_state, clients_file_path)
+        .into_make_service_with_connect_info::<SocketAddr>();
+    axum::serve(listener, app).await.expect("runner HTTP server crashed");
 }
 
 #[cfg(test)]
