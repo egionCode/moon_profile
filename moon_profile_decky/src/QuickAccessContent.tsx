@@ -7,13 +7,40 @@ import { HostStatus, Profile } from "./types";
 
 const HOST_STATUS_LABELS: Record<HostStatus, string> = {
   unconfigured: "Not configured",
-  online: "Online",
+  online: "Available",
   offline: "Offline",
+};
+
+// Amber for "unconfigured" (neither a pass nor a fail, just unknown/not
+// set up yet) - green/red are reserved for a real reachability result.
+const HOST_STATUS_COLORS: Record<HostStatus, string> = {
+  unconfigured: "#f0ad4e",
+  online: "#2ecc71",
+  offline: "#e74c3c",
 };
 
 // Polling interval for GET /health via get_host_status - frequent enough
 // for the indicator to feel live, without hammering the Runner.
 const HOST_STATUS_POLL_INTERVAL_MS = 5000;
+
+// Colored dot + label, e.g. "● Available" - a quick-glance reachability
+// indicator, polled from get_host_status (GET /health on the Runner).
+function HostStatusIndicator({ status }: { status: HostStatus }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+      <span
+        style={{
+          width: "8px",
+          height: "8px",
+          borderRadius: "50%",
+          backgroundColor: HOST_STATUS_COLORS[status],
+          flexShrink: 0,
+        }}
+      />
+      {HOST_STATUS_LABELS[status]}
+    </span>
+  );
+}
 
 interface SyncProgress {
   current: number;
@@ -148,7 +175,9 @@ export function QuickAccessContent() {
           <Field label="Detected context">{context}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="Host status">{HOST_STATUS_LABELS[hostStatus]}</Field>
+          <Field label="Host">
+            <HostStatusIndicator status={hostStatus} />
+          </Field>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onClose} disabled={closing}>
