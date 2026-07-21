@@ -142,18 +142,30 @@ fn shortcuts_vdf_paths(steam_root: &Path) -> Vec<PathBuf> {
 //
 // "appid" is stored as a SIGNED 32-bit int (steam-vdf-parser's I32),
 // but Steam treats it as unsigned everywhere else it matters (the
-// steam://rungameid/<id> URL, the compatdata/<id> folder name) -
-// confirmed against a real shortcuts.vdf on this machine: an entry
-// with appid=I32(-408863985) has its game's compatdata folder named
-// "3886103311", which is exactly `(-408863985i32) as u32`. Casting is
-// required before formatting it as the host_app_id string, otherwise
-// runner.py would embed a negative number in a URL that expects an
-// unsigned one.
+// compatdata/<id> folder name) - confirmed against a real shortcuts.vdf
+// on this machine: an entry with appid=I32(-408863985) has its game's
+// compatdata folder named "3886103311", which is exactly
+// `(-408863985i32) as u32`.
+//
+// That unsigned appid alone is NOT enough to launch the shortcut via
+// steam://rungameid/<id>, though: real bug found running this end to
+// end (Deck -> Apollo -> `steam steam://rungameid/<appid>` on the host)
+// - Steam's console_log.txt showed `ExecuteSteamURL` receiving the
+// call, but no subsequent `GameAction ... LaunchApp` for that AppID
+// (contrast with a manual "Play" click on the same shortcut, which does
+// log the full LaunchApp task sequence). The URL was silently ignored:
+// Steam disambiguates a real game's AppID from a shortcut's via the
+// 64-bit GameID's upper bits, not the raw 32-bit appid alone. For real
+// Steam games GameID == appid (fits in 32 bits, type "App" = 0), but a
+// shortcut's GameID is `(appid as u64) << 32 | 0x02000000` (type
+// "Shortcut" = 0x02) - the same encoding used by community tools that
+// generate non-Steam shortcuts (e.g. Boilr, Steam ROM Manager). Baking
+// this into host_app_id here (instead of threading is_steam down to
+// runner.py) keeps runner.py's cmd-building code identical for both
+// cases, see moonprofile_core.py.
 //
 // Only "AppName"/"appid"/"IsHidden" are read - Exe/StartDir/icon/etc
-// aren't needed here, Steam already knows how to launch this shortcut
-// from its own appid once steam://rungameid/<id> reaches it (same
-// mechanism as real Steam games, see moonprofile_core.py).
+// aren't needed here.
 fn parse_shortcuts_vdf(bytes: &[u8]) -> Vec<HostGame> {
     let Ok(vdf) = steam_vdf_parser::parse_shortcuts(bytes) else {
         return Vec::new();
@@ -171,7 +183,8 @@ fn parse_shortcuts_vdf(bytes: &[u8]) -> Vec<HostGame> {
             }
             let name = entry.get_str(&["AppName"])?.to_string();
             let appid = entry.get_i32(&["appid"])? as u32;
-            Some(HostGame { name, host_app_id: appid.to_string(), is_steam: false })
+            let game_id = ((appid as u64) << 32) | 0x0200_0000;
+            Some(HostGame { name, host_app_id: game_id.to_string(), is_steam: false })
         })
         .collect()
 }

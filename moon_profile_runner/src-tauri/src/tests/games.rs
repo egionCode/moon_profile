@@ -229,14 +229,16 @@ fn shortcuts_vdf_bytes(entries: &[Vec<u8>]) -> Vec<u8> {
 #[test]
 fn parse_shortcuts_vdf_reads_appid_as_unsigned_and_the_app_name() {
     // appid=-12345 as i32, reinterpreted as u32, is 4294954951 - same
-    // cast parse_shortcuts_vdf itself performs, and the same
-    // relationship confirmed against a real file's compatdata folder
-    // name (see the doc comment on parse_shortcuts_vdf).
+    // cast parse_shortcuts_vdf itself performs. host_app_id is then the
+    // 64-bit GameID encoding (appid << 32 | 0x02000000), the format
+    // steam://rungameid/<id> actually needs for a shortcut (see the doc
+    // comment on parse_shortcuts_vdf) - 4294954951 << 32 | 0x02000000 =
+    // 18446691052371836928.
     let bytes = shortcuts_vdf_bytes(&[shortcut_entry_bytes("0", -12345, "Test Game", 0)]);
 
     let games = parse_shortcuts_vdf(&bytes);
 
-    assert_eq!(games, vec![HostGame { name: "Test Game".into(), host_app_id: "4294954951".into(), is_steam: false }]);
+    assert_eq!(games, vec![HostGame { name: "Test Game".into(), host_app_id: "18446691052371836928".into(), is_steam: false }]);
 }
 
 #[test]
@@ -248,7 +250,7 @@ fn parse_shortcuts_vdf_skips_hidden_entries() {
 
     let games = parse_shortcuts_vdf(&bytes);
 
-    assert_eq!(games, vec![HostGame { name: "Visible Game".into(), host_app_id: "4294967295".into(), is_steam: false }]);
+    assert_eq!(games, vec![HostGame { name: "Visible Game".into(), host_app_id: "18446744069448138752".into(), is_steam: false }]);
 }
 
 #[test]
@@ -288,8 +290,8 @@ fn list_non_steam_games_reads_shortcuts_from_every_user_profile() {
     assert_eq!(
         games,
         vec![
-            HostGame { name: "Game From Profile A".into(), host_app_id: "4294967295".into(), is_steam: false },
-            HostGame { name: "Game From Profile B".into(), host_app_id: "4294967294".into(), is_steam: false },
+            HostGame { name: "Game From Profile A".into(), host_app_id: "18446744069448138752".into(), is_steam: false },
+            HostGame { name: "Game From Profile B".into(), host_app_id: "18446744065153171456".into(), is_steam: false },
         ]
     );
 }
