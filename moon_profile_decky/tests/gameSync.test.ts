@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const listHostGames = vi.fn();
 const getGameShortcuts = vi.fn();
 const saveGameShortcuts = vi.fn();
-const getConfig = vi.fn();
 const logFrontendError = vi.fn();
 const ensureGameShortcut = vi.fn();
 const applySteamCdnArtwork = vi.fn();
@@ -11,12 +10,22 @@ const applySteamGridDbArtwork = vi.fn();
 const addShortcutsToStreamingCollection = vi.fn();
 const toast = vi.fn();
 
+// Mutable, read via a getter in the "../src/env" mock below - env.ts
+// exports a build-time constant (see rollup.config.js), this lets each
+// test simulate "key configured" vs "key empty" without needing a real
+// .env at test time.
+let steamgriddbApiKey = "";
+
 vi.mock("../src/api", () => ({
   listHostGames: (...args: unknown[]) => listHostGames(...args),
   getGameShortcuts: (...args: unknown[]) => getGameShortcuts(...args),
   saveGameShortcuts: (...args: unknown[]) => saveGameShortcuts(...args),
-  getConfig: (...args: unknown[]) => getConfig(...args),
   logFrontendError: (...args: unknown[]) => logFrontendError(...args),
+}));
+vi.mock("../src/env", () => ({
+  get STEAMGRIDDB_API_KEY() {
+    return steamgriddbApiKey;
+  },
 }));
 vi.mock("../src/gameShortcuts", () => ({
   ensureGameShortcut: (...args: unknown[]) => ensureGameShortcut(...args),
@@ -45,17 +54,10 @@ const GAMES = [
 describe("syncHostGames progress callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    steamgriddbApiKey = "";
     listHostGames.mockResolvedValue({ ok: true, runner_path: "/runner/runner.py", games: GAMES });
     getGameShortcuts.mockResolvedValue({});
     saveGameShortcuts.mockResolvedValue(undefined);
-    getConfig.mockResolvedValue({
-      host: "",
-      username: "",
-      password: "",
-      runner_port: 47991,
-      steamgriddb_api_key: "",
-      mac_address: "",
-    });
     logFrontendError.mockResolvedValue(undefined);
     ensureGameShortcut.mockImplementation(async (_shortcuts, hostAppId) => Number(hostAppId));
     applySteamCdnArtwork.mockResolvedValue(undefined);
@@ -98,14 +100,7 @@ describe("syncHostGames progress callback", () => {
   });
 
   it("applies Steam CDN artwork for Steam games, SteamGridDB for non-Steam ones when a key is configured", async () => {
-    getConfig.mockResolvedValue({
-      host: "",
-      username: "",
-      password: "",
-      runner_port: 47991,
-      steamgriddb_api_key: "sgdb-key",
-      mac_address: "",
-    });
+    steamgriddbApiKey = "sgdb-key";
 
     await syncHostGames();
 
@@ -114,8 +109,8 @@ describe("syncHostGames progress callback", () => {
     expect(applySteamGridDbArtwork).toHaveBeenCalledWith(333, "Game C", "sgdb-key");
   });
 
-  it("skips SteamGridDB artwork for non-Steam games when no API key is configured", async () => {
-    await syncHostGames(); // getConfig defaults to steamgriddb_api_key: ""
+  it("skips SteamGridDB artwork for non-Steam games when no key is configured", async () => {
+    await syncHostGames(); // steamgriddbApiKey defaults to "" in beforeEach
 
     expect(applySteamGridDbArtwork).not.toHaveBeenCalled();
   });

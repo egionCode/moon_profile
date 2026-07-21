@@ -10,7 +10,8 @@
 // Manual sync (button), not an automatic background one, same incremental
 // spirit as the rest of the project.
 import { toaster } from "@decky/api";
-import { getConfig, getGameShortcuts, listHostGames, logFrontendError, saveGameShortcuts } from "./api";
+import { getGameShortcuts, listHostGames, logFrontendError, saveGameShortcuts } from "./api";
+import { STEAMGRIDDB_API_KEY } from "./env";
 import { ensureGameShortcut } from "./gameShortcuts";
 import { applySteamCdnArtwork, applySteamGridDbArtwork } from "./gameArtwork";
 import { addShortcutsToStreamingCollection } from "./gameCollection";
@@ -40,7 +41,7 @@ export async function syncHostGames(onProgress?: (current: number, total: number
     return;
   }
 
-  const [shortcuts, config] = await Promise.all([getGameShortcuts(), getConfig()]);
+  const shortcuts = await getGameShortcuts();
 
   let created = 0;
   const deckAppIds: number[] = [];
@@ -60,7 +61,7 @@ export async function syncHostGames(onProgress?: (current: number, total: number
       continue;
     }
     deckAppIds.push(shortcutAppId);
-    await applyArtworkSafely(shortcutAppId, game, config.steamgriddb_api_key);
+    await applyArtworkSafely(shortcutAppId, game, STEAMGRIDDB_API_KEY);
     created++;
   }
 

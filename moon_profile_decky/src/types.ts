@@ -43,12 +43,6 @@ export interface Config {
   // Runs on the SAME machine as Apollo, only the port changes, the host is
   // "host" above.
   runner_port: number;
-  // SteamGridDB API key (free, https://www.steamgriddb.com/profile/preferences/api),
-  // used to fetch cover/hero art for non-Steam games synced from the host
-  // (see gameArtwork.ts's applySteamGridDbArtwork) - real Steam games use
-  // the official CDN instead and don't need this. Empty string means
-  // non-Steam games sync without artwork.
-  steamgriddb_api_key: string;
   // Host's primary NIC MAC address, detected via GET /system/mac on the
   // Runner (see ApolloConfigSection.tsx's "Detect MAC from host" button)
   // and used to build the Wake-on-LAN magic packet in wake_host once the

@@ -98,14 +98,12 @@ class Plugin:
                 "username": "",
                 "password": "",
                 "runner_port": RUNNER_PORT,
-                "steamgriddb_api_key": "",
                 "mac_address": "",
             }
         with open(path) as f:
             config = json.load(f)
         # setdefault: configs saved before these features existed don't have this field.
         config.setdefault("runner_port", RUNNER_PORT)
-        config.setdefault("steamgriddb_api_key", "")
         config.setdefault("mac_address", "")
         return config
 

@@ -91,9 +91,8 @@ export async function applySteamCdnArtwork(shortcutAppId: number, steamAppId: st
 // Non-Steam games have no official Store page, so no CDN art -
 // SteamGridDB (https://www.steamgriddb.com/api/v2) is a free community
 // database keyed by game NAME (autocomplete search) instead of a Steam
-// AppID, and covers all 5 asset types. Requires the user's own API key
-// (config.steamgriddb_api_key, free from their SteamGridDB account
-// preferences) - see ApolloConfigSection.
+// AppID, and covers all 5 asset types. Requires an API key - see env.ts
+// (the maintainer's own build-time key, not a per-install setting).
 const STEAMGRIDDB_BASE_URL = "https://www.steamgriddb.com/api/v2";
 
 interface SteamGridDbSearchResult {

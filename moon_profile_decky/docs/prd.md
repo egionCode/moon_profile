@@ -371,6 +371,7 @@ to Apollo) before exec'ing Moonlight.
   `GamesGridSection.tsx` (rather than `ApolloConfigSection.tsx`, since
   it's specifically about non-Steam artwork, not Apollo credentials) -
   free key from https://www.steamgriddb.com/profile/preferences/api.
+  **Superseded** (see below): removed in favor of a build-time constant.
 - `gameArtwork.ts`: `applySteamGridDbArtwork` (search by name, then
   grids/heroes/logos/icons endpoints) alongside the existing
   `applySteamCdnArtwork` for real Steam games - both now cover all 5
@@ -383,6 +384,18 @@ to Apollo) before exec'ing Moonlight.
   `log_frontend_error` bridge (`main.py`, since frontend `console.error`
   never reaches `DECKY_PLUGIN_LOG`) instead of stopping the sync loop
   over the remaining games.
+
+**Later change: SteamGridDB key moved from per-install config to a
+build-time constant.** There is exactly one SteamGridDB account behind
+this plugin (the maintainer's own) - a per-install Settings field made
+sense for something like Apollo credentials (different per host) but
+not for this, so it was removed: `config.steamgriddb_api_key` (and its
+TextField in `GamesGridSection.tsx`) are gone, replaced by
+`src/env.ts`'s `STEAMGRIDDB_API_KEY`, inlined into `dist/index.js` at
+build time by a `replace()` rollup plugin (`rollup.config.js`) that
+reads a local `.env` (gitignored - this repo is public on GitHub, see
+`.env.example`). `gameSync.ts`/`GamesGridSection.tsx` no longer need
+`getConfig()`/`Config` at all for this.
 
 **Stage C - ✅ done: old button removed.** Deleted
 `LibraryAppPatch.tsx`, `GameActionButton.tsx`, `stream.ts`,

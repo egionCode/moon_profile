@@ -24,6 +24,9 @@ importers:
       '@decky/ui':
         specifier: ^4.11.0
         version: 4.11.0
+      '@rollup/plugin-replace':
+        specifier: ^5.0.7
+        version: 5.0.7(rollup@4.53.3)
       '@rollup/rollup-linux-x64-musl':
         specifier: ^4.53.3
         version: 4.53.3
@@ -1546,7 +1549,7 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.8
       estree-walker: 2.0.2
-      picomatch: 4.0.3
+      picomatch: 4.0.5
     optionalDependencies:
       rollup: 4.53.3
 

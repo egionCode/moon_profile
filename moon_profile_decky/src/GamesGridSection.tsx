@@ -1,17 +1,18 @@
 // "Games" tab of the Settings sidenav: a grid showing the per-game
 // shortcuts already synced (see gameSync.ts), with cover art when
 // available (real Steam games via the official CDN, non-Steam ones via
-// SteamGridDB if an API key is configured below). Creating a shortcut is
-// still only done via the "Sync games from host" button in Quick Access;
-// the "Clear" button here removes everything (from Steam and from the
-// persisted file).
+// SteamGridDB, using the maintainer's own build-time key, see env.ts).
+// Creating a shortcut is still only done via the "Sync games from host"
+// button in Quick Access; the "Clear" button here removes everything
+// (from Steam and from the persisted file).
 import { CSSProperties, useEffect, useState } from "react";
-import { ButtonItem, DialogBodyText, Focusable, PanelSection, PanelSectionRow, TextField } from "@decky/ui";
+import { ButtonItem, Focusable, PanelSection, PanelSectionRow } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { getGameShortcuts, saveGameShortcuts } from "./api";
+import { STEAMGRIDDB_API_KEY } from "./env";
 import { getImageAsB64, getSteamCapsuleUrl, getSteamGridDbCapsuleUrl } from "./gameArtwork";
 import { removeAllGameShortcuts } from "./gameShortcuts";
-import { Config, GameShortcuts } from "./types";
+import { GameShortcuts } from "./types";
 
 const gridStyle: CSSProperties = {
   display: "grid",
@@ -60,10 +61,9 @@ interface GameCardProps {
   hostAppId: string;
   name: string;
   isSteam: boolean;
-  steamgriddbApiKey: string;
 }
 
-function GameCard({ hostAppId, name, isSteam, steamgriddbApiKey }: GameCardProps) {
+function GameCard({ hostAppId, name, isSteam }: GameCardProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,8 +75,8 @@ function GameCard({ hostAppId, name, isSteam, steamgriddbApiKey }: GameCardProps
           setImageSrc(`data:image/jpeg;base64,${data}`);
         }
       });
-    } else if (steamgriddbApiKey) {
-      getSteamGridDbCapsuleUrl(name, steamgriddbApiKey).then((url) => {
+    } else if (STEAMGRIDDB_API_KEY) {
+      getSteamGridDbCapsuleUrl(name, STEAMGRIDDB_API_KEY).then((url) => {
         if (cancelled || !url) {
           return;
         }
@@ -91,7 +91,7 @@ function GameCard({ hostAppId, name, isSteam, steamgriddbApiKey }: GameCardProps
     return () => {
       cancelled = true;
     };
-  }, [hostAppId, name, isSteam, steamgriddbApiKey]);
+  }, [hostAppId, name, isSteam]);
 
   return (
     <div style={cardStyle}>
@@ -103,13 +103,7 @@ function GameCard({ hostAppId, name, isSteam, steamgriddbApiKey }: GameCardProps
   );
 }
 
-interface GamesGridSectionProps {
-  config: Config;
-  setConfig: (config: Config) => void;
-  onSave: () => void;
-}
-
-export function GamesGridSection({ config, setConfig, onSave }: GamesGridSectionProps) {
+export function GamesGridSection() {
   const [shortcuts, setShortcuts] = useState<GameShortcuts>({});
   const [loaded, setLoaded] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -141,32 +135,6 @@ export function GamesGridSection({ config, setConfig, onSave }: GamesGridSection
   return (
     <>
       <PanelSection>
-        <PanelSectionRow>
-          <DialogBodyText>
-            Free API key from{" "}
-            <a href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noreferrer">
-              steamgriddb.com
-            </a>{" "}
-            - only needed for cover/hero art on non-Steam games (real Steam games already get official artwork
-            without it).
-          </DialogBodyText>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label="SteamGridDB API key"
-            bIsPassword
-            value={config.steamgriddb_api_key}
-            onChange={(e) => setConfig({ ...config, steamgriddb_api_key: e.target.value })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={onSave}>
-            Save
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection>
         {!loaded && <PanelSectionRow>Loading...</PanelSectionRow>}
         {loaded && entries.length === 0 && (
           <PanelSectionRow>
@@ -178,13 +146,7 @@ export function GamesGridSection({ config, setConfig, onSave }: GamesGridSection
             <PanelSectionRow>
               <Focusable style={gridStyle}>
                 {entries.map(([hostAppId, entry]) => (
-                  <GameCard
-                    key={hostAppId}
-                    hostAppId={hostAppId}
-                    name={entry.name}
-                    isSteam={entry.is_steam}
-                    steamgriddbApiKey={config.steamgriddb_api_key}
-                  />
+                  <GameCard key={hostAppId} hostAppId={hostAppId} name={entry.name} isSteam={entry.is_steam} />
                 ))}
               </Focusable>
             </PanelSectionRow>
