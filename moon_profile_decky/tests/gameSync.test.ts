@@ -54,6 +54,7 @@ describe("syncHostGames progress callback", () => {
       password: "",
       runner_port: 47991,
       steamgriddb_api_key: "",
+      mac_address: "",
     });
     logFrontendError.mockResolvedValue(undefined);
     ensureGameShortcut.mockImplementation(async (_shortcuts, hostAppId) => Number(hostAppId));
@@ -103,6 +104,7 @@ describe("syncHostGames progress callback", () => {
       password: "",
       runner_port: 47991,
       steamgriddb_api_key: "sgdb-key",
+      mac_address: "",
     });
 
     await syncHostGames();

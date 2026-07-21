@@ -49,6 +49,27 @@ export interface Config {
   // the official CDN instead and don't need this. Empty string means
   // non-Steam games sync without artwork.
   steamgriddb_api_key: string;
+  // Host's primary NIC MAC address, detected via GET /system/mac on the
+  // Runner (see ApolloConfigSection.tsx's "Detect MAC from host" button)
+  // and used to build the Wake-on-LAN magic packet in wake_host once the
+  // host is off and can't be asked directly anymore. Empty until detected.
+  mac_address: string;
+}
+
+// "unconfigured": no Apollo host set yet. "online"/"offline": whether
+// GET /health on the Runner answered - polled by QuickAccessContent.tsx
+// to show a status indicator and gate the shutdown/wake buttons.
+export type HostStatus = "unconfigured" | "online" | "offline";
+
+// Generic ok/error shape for actions that don't need to return anything
+// else (shutdown_host, wake_host in main.py).
+export interface OkResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface FetchHostMacResult extends OkResult {
+  mac?: string;
 }
 
 export interface StreamResult {

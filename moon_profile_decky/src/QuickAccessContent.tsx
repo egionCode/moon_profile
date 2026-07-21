@@ -1,9 +1,19 @@
 import { useState, useEffect } from "react";
-import { PanelSection, PanelSectionRow, ButtonItem, Field } from "@decky/ui";
+import { PanelSection, PanelSectionRow, ButtonItem, Field, showModal, ConfirmModal } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { getProfiles, detectContext, stopStream } from "./api";
+import { getProfiles, detectContext, stopStream, getHostStatus, shutdownHost, wakeHost } from "./api";
 import { syncHostGames } from "./gameSync";
-import { Profile } from "./types";
+import { HostStatus, Profile } from "./types";
+
+const HOST_STATUS_LABELS: Record<HostStatus, string> = {
+  unconfigured: "Not configured",
+  online: "Online",
+  offline: "Offline",
+};
+
+// Polling interval for GET /health via get_host_status - frequent enough
+// for the indicator to feel live, without hammering the Runner.
+const HOST_STATUS_POLL_INTERVAL_MS = 5000;
 
 interface SyncProgress {
   current: number;
@@ -40,10 +50,19 @@ export function QuickAccessContent() {
   const [closing, setClosing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [hostStatus, setHostStatus] = useState<HostStatus>("unconfigured");
+  const [powerBusy, setPowerBusy] = useState(false);
 
   useEffect(() => {
     getProfiles().then(setProfiles);
     detectContext().then(setContext);
+  }, []);
+
+  useEffect(() => {
+    const poll = () => getHostStatus().then(setHostStatus);
+    poll();
+    const interval = setInterval(poll, HOST_STATUS_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   const onClose = async () => {
@@ -61,6 +80,51 @@ export function QuickAccessContent() {
     } finally {
       setClosing(false);
     }
+  };
+
+  const onWake = async () => {
+    setPowerBusy(true);
+    try {
+      const result = await wakeHost();
+      if (result.ok) {
+        toaster.toast({ title: "MoonProfile", body: "Wake-on-LAN packet sent" });
+      } else {
+        toaster.toast({ title: "MoonProfile - error", body: result.error ?? "Unknown failure" });
+      }
+    } catch (e) {
+      console.error("MoonProfile: unexpected error waking the host", e);
+      toaster.toast({ title: "MoonProfile - unexpected error", body: String(e) });
+    } finally {
+      setPowerBusy(false);
+    }
+  };
+
+  // Gated behind ConfirmModal: destructive and hard to reverse without
+  // Wake-on-LAN already configured and working on the host's BIOS/NIC
+  // (outside this code's control, see docs/prd.md Phase 6).
+  const onShutdown = () => {
+    showModal(
+      <ConfirmModal
+        strTitle="Turn off host"
+        strDescription="This will shut down the host PC. Make sure Wake-on-LAN is set up if you want to turn it back on remotely."
+        onOK={async () => {
+          setPowerBusy(true);
+          try {
+            const result = await shutdownHost();
+            if (result.ok) {
+              toaster.toast({ title: "MoonProfile", body: "Shutdown requested" });
+            } else {
+              toaster.toast({ title: "MoonProfile - error", body: result.error ?? "Unknown failure" });
+            }
+          } catch (e) {
+            console.error("MoonProfile: unexpected error shutting down the host", e);
+            toaster.toast({ title: "MoonProfile - unexpected error", body: String(e) });
+          } finally {
+            setPowerBusy(false);
+          }
+        }}
+      />,
+    );
   };
 
   const onSyncGames = async () => {
@@ -84,8 +148,21 @@ export function QuickAccessContent() {
           <Field label="Detected context">{context}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
+          <Field label="Host status">{HOST_STATUS_LABELS[hostStatus]}</Field>
+        </PanelSectionRow>
+        <PanelSectionRow>
           <ButtonItem layout="below" onClick={onClose} disabled={closing}>
             {closing ? "Closing..." : "Close connection"}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onShutdown} disabled={powerBusy || hostStatus !== "online"}>
+            Turn off host
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onWake} disabled={powerBusy || hostStatus !== "offline"}>
+            Wake host
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>

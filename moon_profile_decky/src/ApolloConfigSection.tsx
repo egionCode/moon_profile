@@ -1,4 +1,7 @@
-import { PanelSection, PanelSectionRow, TextField, ButtonItem, DialogBodyText } from "@decky/ui";
+import { useState } from "react";
+import { PanelSection, PanelSectionRow, TextField, ButtonItem, DialogBodyText, Field } from "@decky/ui";
+import { toaster } from "@decky/api";
+import { fetchHostMac } from "./api";
 import { Config } from "./types";
 
 interface ApolloConfigSectionProps {
@@ -13,6 +16,31 @@ interface ApolloConfigSectionProps {
 // edits made on the button-positioning tab (both work on the SAME Config
 // object, which is saved whole in one go on the backend).
 export function ApolloConfigSection({ config, setConfig, onSave }: ApolloConfigSectionProps) {
+  const [detecting, setDetecting] = useState(false);
+
+  // Requires the host to already be reachable (asks the Runner's GET
+  // /system/mac), which is why this lives here and not in Quick Access -
+  // fetch_host_mac (main.py) already persists the result on the backend,
+  // this just mirrors it into the locally-edited config so it isn't lost
+  // if the user then edits something else and clicks Save.
+  const onDetectMac = async () => {
+    setDetecting(true);
+    try {
+      const result = await fetchHostMac();
+      if (result.ok && result.mac) {
+        setConfig({ ...config, mac_address: result.mac });
+        toaster.toast({ title: "MoonProfile", body: `MAC detected: ${result.mac}` });
+      } else {
+        toaster.toast({ title: "MoonProfile - error", body: result.error ?? "Unknown failure" });
+      }
+    } catch (e) {
+      console.error("MoonProfile: unexpected error detecting the host MAC", e);
+      toaster.toast({ title: "MoonProfile - unexpected error", body: String(e) });
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   return (
     <>
       <PanelSection>
@@ -45,6 +73,17 @@ export function ApolloConfigSection({ config, setConfig, onSave }: ApolloConfigS
             value={config.password}
             onChange={(e) => setConfig({ ...config, password: e.target.value })}
           />
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title="Wake-on-LAN">
+        <PanelSectionRow>
+          <Field label="MAC address">{config.mac_address || "Not detected yet"}</Field>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onDetectMac} disabled={detecting}>
+            {detecting ? "Detecting..." : "Detect MAC from host"}
+          </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
 
