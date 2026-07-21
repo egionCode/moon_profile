@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="styles.css" />
@@ -11,21 +11,17 @@
   <body>
     <main class="container">
       <h1>MoonProfile Runner</h1>
-      <p class="subtitle">Rodando em segundo plano - servidor local aberto na porta 47991, sem autenticação (rede local).</p>
+      <p class="subtitle">Running in the background - local server open on port 47991, no authentication (local network).</p>
 
       <section class="card">
         <h2>Status</h2>
-        <p id="status">Ativo</p>
+        <p id="status">Active</p>
       </section>
 
       <section class="card">
-        <h2>Clients conectados</h2>
-        <p class="placeholder">Em breve.</p>
-      </section>
-
-      <section class="card">
-        <h2>Estabilidade da conexão</h2>
-        <p class="placeholder">Em breve.</p>
+        <h2>Clients</h2>
+        <p id="clients-empty" class="placeholder">No client has connected to this host yet.</p>
+        <ul id="clients-list" class="clients-list"></ul>
       </section>
     </main>
   </body>
