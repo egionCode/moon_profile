@@ -92,13 +92,26 @@ export interface ListGamesResult {
   error?: string;
 }
 
+// One resolution/fps combo a display actually supports (from
+// kscreen-doctor's EDID-derived "modes" list, already deduped/sorted by
+// the Runner - see displays.rs's modes_from_kscreen). Drives BOTH
+// host.resolution/fps and moonlight.resolution/fps in ProfileEditor.tsx
+// - there's no reason for the two to differ, the stream should always
+// match what the host output is actually being switched to.
+export interface HostDisplayMode {
+  resolution: string; // ex: "3840x2160"
+  fps: number;
+}
+
 // A host display/output (via kscreen-doctor -j, see
-// moon_profile_runner/src-tauri/src/displays.rs), feeds the "Target
-// output" select and the list of outputs to disable in ProfileEditor.tsx.
+// moon_profile_runner/src-tauri/src/displays.rs), feeds the "Monitor"/
+// "Resolution" selects and the list of outputs to disable in
+// ProfileEditor.tsx.
 export interface HostDisplay {
   name: string; // ex: "HDMI-A-1"
   connected: boolean;
   enabled: boolean;
+  modes: HostDisplayMode[];
 }
 
 export interface ListDisplaysResult {

@@ -26,15 +26,29 @@ const CODEC_OPTIONS = [
 
 // ex: "3840x2160" - basic validation, just to catch typos before sending
 // it to Apollo/Moonlight (which fail in confusing ways with an invalid
-// value, as already seen in Phase 0/1).
+// value, as already seen in Phase 0/1). Only reachable via the manual
+// fallback fields below (the real Monitor/Resolution selects always
+// produce a well-formed value straight from the Runner).
 const RESOLUTION_RE = /^\d+x\d+$/;
 
 // The data is still stored as the string "3840x2160" (it's the format the
 // backend/runner/Apollo expect, see main.py and runner.py), only the UI
-// splits it into two fields (Width/Height) to make it easier to edit.
+// splits it into two fields (Width/Height) for the manual fallback.
 function splitResolution(value: string): { width: string; height: string } {
   const [width = "", height = ""] = value.split("x");
   return { width, height };
+}
+
+// Sets the SAME resolution/fps on both host and moonlight at once -
+// there's exactly one "Resolution" concept in the UI now (see the
+// "Display" section below): whatever the host output is switched to is
+// also what Moonlight streams at, no reason for the two to ever differ.
+function applyResolution(draft: Profile, resolution: string, fps: number): Profile {
+  return {
+    ...draft,
+    moonlight: { ...draft.moonlight, resolution, fps },
+    host: { ...draft.host, resolution, fps },
+  };
 }
 
 interface ProfileEditorProps {
@@ -48,23 +62,33 @@ interface ProfileEditorProps {
 export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }: ProfileEditorProps) {
   const [draft, setDraft] = useState<Profile>(profile);
   const [disableOutputsText, setDisableOutputsText] = useState(draft.host.disable_outputs.join(", "));
-  // The host's real monitors (via the MoonProfile Runner, see
-  // moon_profile_runner/src-tauri/src/displays.rs). While empty (still
-  // loading, or the Runner is unreachable), the fields below fall back to
-  // the old free-text input, so the user isn't stuck unable to edit just
-  // because the Runner didn't respond.
+  // The host's real monitors + their supported resolutions/fps (via the
+  // MoonProfile Runner, see moon_profile_runner/src-tauri/src/displays.rs).
+  // loadingDisplays distinguishes "still asking the Runner" from "asked,
+  // got nothing back" (Runner unreachable, or genuinely no monitors) -
+  // the manual fallback fields below only show up once we know it's the
+  // latter, so the user isn't stuck unable to edit while the request is
+  // still in flight, or has no data to go on at all.
   const [displays, setDisplays] = useState<HostDisplay[]>([]);
+  const [loadingDisplays, setLoadingDisplays] = useState(true);
 
   useEffect(() => {
-    listHostDisplays().then((result) => {
-      if (result.ok) {
-        setDisplays(result.displays);
-      }
-    });
+    listHostDisplays()
+      .then((result) => {
+        if (result.ok) {
+          setDisplays(result.displays);
+        }
+      })
+      .finally(() => setLoadingDisplays(false));
   }, []);
 
-  const moonlightRes = splitResolution(draft.moonlight.resolution);
-  const hostRes = splitResolution(draft.host.resolution);
+  const manualRes = splitResolution(draft.host.resolution);
+  const selectedDisplay = displays.find((d) => d.name === draft.host.target_output);
+  const modeOptions = (selectedDisplay?.modes ?? []).map((m) => ({
+    data: `${m.resolution}@${m.fps}`,
+    label: `${m.resolution} @ ${m.fps} FPS`,
+  }));
+  const selectedModeKey = `${draft.host.resolution}@${draft.host.fps}`;
 
   const targetOutputOptions = displays.map((d) => ({
     data: d.name,
@@ -84,12 +108,8 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
       toaster.toast({ title: "MoonProfile", body: `A profile with id "${draft.id}" already exists` });
       return;
     }
-    if (!RESOLUTION_RE.test(draft.moonlight.resolution)) {
-      toaster.toast({ title: "MoonProfile", body: 'Invalid Moonlight resolution (format "3840x2160")' });
-      return;
-    }
     if (!RESOLUTION_RE.test(draft.host.resolution)) {
-      toaster.toast({ title: "MoonProfile", body: 'Invalid Host resolution (format "3840x2160")' });
+      toaster.toast({ title: "MoonProfile", body: 'Invalid resolution (format "3840x2160")' });
       return;
     }
 
@@ -126,45 +146,80 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
         </PanelSectionRow>
       </PanelSection>
 
+      <PanelSection title="Display">
+        {loadingDisplays ? (
+          <PanelSectionRow>Loading available monitors...</PanelSectionRow>
+        ) : displays.length > 0 ? (
+          <>
+            <PanelSectionRow>
+              <DropdownItem
+                label="Monitor"
+                rgOptions={targetOutputOptions}
+                selectedOption={draft.host.target_output}
+                onChange={(o) => {
+                  const display = displays.find((d) => d.name === o.data);
+                  const firstMode = display?.modes[0];
+                  setDraft((prev) => {
+                    const withOutput = { ...prev, host: { ...prev.host, target_output: o.data } };
+                    return firstMode ? applyResolution(withOutput, firstMode.resolution, firstMode.fps) : withOutput;
+                  });
+                }}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <DropdownItem
+                label="Resolution"
+                rgOptions={modeOptions}
+                selectedOption={selectedModeKey}
+                onChange={(o) => {
+                  const [resolution, fps] = o.data.split("@");
+                  setDraft((prev) => applyResolution(prev, resolution, Number(fps)));
+                }}
+              />
+            </PanelSectionRow>
+          </>
+        ) : (
+          <>
+            <PanelSectionRow>
+              <TextField
+                label="Monitor (target output)"
+                value={draft.host.target_output}
+                onChange={(e) => setDraft({ ...draft, host: { ...draft.host, target_output: e.target.value } })}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <Focusable style={rowStyle}>
+                <div style={halfStyle}>
+                  <TextField
+                    label="Width"
+                    mustBeNumeric
+                    value={manualRes.width}
+                    onChange={(e) => setDraft(applyResolution(draft, `${e.target.value}x${manualRes.height}`, draft.host.fps))}
+                  />
+                </div>
+                <div style={halfStyle}>
+                  <TextField
+                    label="Height"
+                    mustBeNumeric
+                    value={manualRes.height}
+                    onChange={(e) => setDraft(applyResolution(draft, `${manualRes.width}x${e.target.value}`, draft.host.fps))}
+                  />
+                </div>
+              </Focusable>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <TextField
+                label="FPS"
+                mustBeNumeric
+                value={String(draft.host.fps)}
+                onChange={(e) => setDraft(applyResolution(draft, draft.host.resolution, Number(e.target.value) || 0))}
+              />
+            </PanelSectionRow>
+          </>
+        )}
+      </PanelSection>
+
       <PanelSection title="Moonlight (client)">
-        <PanelSectionRow>
-          <Focusable style={rowStyle}>
-            <div style={halfStyle}>
-              <TextField
-                label="Width"
-                mustBeNumeric
-                value={moonlightRes.width}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    moonlight: { ...draft.moonlight, resolution: `${e.target.value}x${moonlightRes.height}` },
-                  })
-                }
-              />
-            </div>
-            <div style={halfStyle}>
-              <TextField
-                label="Height"
-                mustBeNumeric
-                value={moonlightRes.height}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    moonlight: { ...draft.moonlight, resolution: `${moonlightRes.width}x${e.target.value}` },
-                  })
-                }
-              />
-            </div>
-          </Focusable>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label="FPS"
-            mustBeNumeric
-            value={String(draft.moonlight.fps)}
-            onChange={(e) => setDraft({ ...draft, moonlight: { ...draft.moonlight, fps: Number(e.target.value) || 0 } })}
-          />
-        </PanelSectionRow>
         <PanelSectionRow>
           <TextField
             label="Bitrate (kbps)"
@@ -191,54 +246,6 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
       </PanelSection>
 
       <PanelSection title="Host (Apollo)">
-        <PanelSectionRow>
-          {displays.length > 0 ? (
-            <DropdownItem
-              label="Target output"
-              rgOptions={targetOutputOptions}
-              selectedOption={draft.host.target_output}
-              onChange={(o) => setDraft({ ...draft, host: { ...draft.host, target_output: o.data } })}
-            />
-          ) : (
-            <TextField
-              label="Target output"
-              value={draft.host.target_output}
-              onChange={(e) => setDraft({ ...draft, host: { ...draft.host, target_output: e.target.value } })}
-            />
-          )}
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <Focusable style={rowStyle}>
-            <div style={halfStyle}>
-              <TextField
-                label="Width"
-                mustBeNumeric
-                value={hostRes.width}
-                onChange={(e) =>
-                  setDraft({ ...draft, host: { ...draft.host, resolution: `${e.target.value}x${hostRes.height}` } })
-                }
-              />
-            </div>
-            <div style={halfStyle}>
-              <TextField
-                label="Height"
-                mustBeNumeric
-                value={hostRes.height}
-                onChange={(e) =>
-                  setDraft({ ...draft, host: { ...draft.host, resolution: `${hostRes.width}x${e.target.value}` } })
-                }
-              />
-            </div>
-          </Focusable>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label="FPS"
-            mustBeNumeric
-            value={String(draft.host.fps)}
-            onChange={(e) => setDraft({ ...draft, host: { ...draft.host, fps: Number(e.target.value) || 0 } })}
-          />
-        </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
             label="HDR"

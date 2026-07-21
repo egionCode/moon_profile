@@ -488,6 +488,40 @@ inline where the gap is and in `AGENTS.md`.
 (polkit `allow_active`) and that Wake-on-LAN is enabled in the host's
 BIOS/NIC - both need to be confirmed by hand on the real machine.
 
+### Phase 7: Unified monitor + resolution selection
+
+`ProfileEditor.tsx` used to have four free-typed fields (Moonlight
+Width/Height/FPS, Host Width/Height/FPS) plus a "Target output" select -
+two independent resolutions that had no real reason to ever differ (the
+stream should always match whatever the host output is actually being
+switched to), and typing "3840x2160" by hand instead of picking from
+what the monitor actually supports.
+
+- `displays.rs`: `kscreen-doctor -j` already reports each output's
+  supported modes (`modes: [{refreshRate, size: {width, height}}, ...]`)
+  - previously discarded by `KscreenOutput`'s deserialize struct. New
+    `HostDisplayMode { resolution, fps }` and `modes_from_kscreen`
+    (pure, its own unit tests): dedups by rounded fps (real EDID data
+    repeats the same mode several times with slightly different
+    fractional `refreshRate` values - confirmed against a real
+    monitor), sorted biggest resolution first then highest fps. `GET
+    /displays` now returns this per output, no new endpoint needed.
+- `ProfileEditor.tsx`: replaced the four manual fields with two selects,
+  "Monitor" and "Resolution" (options = the selected monitor's modes) -
+  `applyResolution()` sets `host.resolution`/`host.fps` AND
+  `moonlight.resolution`/`moonlight.fps` together from a single choice,
+  so they can no longer diverge going forward. Picking a different
+  monitor auto-selects its first (best) mode. A `loadingDisplays` state
+  distinguishes "still asking the Runner" from "asked, got nothing back"
+  - the fallback manual Width/Height/FPS fields (still writing to both
+    host and moonlight via the same `applyResolution`) only appear once
+    it's confirmed there's no real data to select from (Runner
+    unreachable, or no outputs).
+- Existing profiles saved before this change keep whatever
+  host/moonlight resolution they already had (no forced migration) -
+  they only get unified the next time someone edits that profile through
+  this UI.
+
 ## Technical references
 
 ### Apollo API (inherited from Sunshine)
