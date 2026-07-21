@@ -1,4 +1,5 @@
 import os
+import socket
 import stat
 import json
 import shutil
@@ -6,7 +7,7 @@ import urllib.request
 import urllib.error
 
 import decky
-from moonprofile_core import RUNNER_PORT, detect_context
+from moonprofile_core import RUNNER_PORT, build_magic_packet, detect_context
 
 
 def _config_path() -> str:
@@ -69,6 +70,24 @@ class RunnerClient:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read())
 
+    def health(self) -> dict:
+        # Short 2s timeout, deliberately shorter than the other methods'
+        # 10-15s: polling this from Quick Access every few seconds
+        # shouldn't hang waiting on a host that might already be off.
+        req = urllib.request.Request(f"{self.base_url}/health")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return json.loads(resp.read())
+
+    def get_mac(self) -> dict:
+        req = urllib.request.Request(f"{self.base_url}/system/mac")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    def shutdown(self) -> dict:
+        req = urllib.request.Request(f"{self.base_url}/system/shutdown", data=b"", method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+
 
 class Plugin:
     async def get_config(self) -> dict:
@@ -80,12 +99,14 @@ class Plugin:
                 "password": "",
                 "runner_port": RUNNER_PORT,
                 "steamgriddb_api_key": "",
+                "mac_address": "",
             }
         with open(path) as f:
             config = json.load(f)
         # setdefault: configs saved before these features existed don't have this field.
         config.setdefault("runner_port", RUNNER_PORT)
         config.setdefault("steamgriddb_api_key", "")
+        config.setdefault("mac_address", "")
         return config
 
     async def save_config(self, config: dict) -> None:
@@ -226,6 +247,90 @@ class Plugin:
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             decky.logger.error(f"Failed to list displays from the MoonProfile Runner: {e}")
             return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}", "displays": []}
+
+    async def get_host_status(self) -> str:
+        # Polled by QuickAccessContent.tsx to show a status indicator and
+        # gate the shutdown/wake buttons (only one of them makes sense at
+        # a time). GET /health is a cheap probe with a short timeout
+        # (RunnerClient.health), it doesn't fire a sync notification like
+        # /games would.
+        config = await self.get_config()
+        if not config.get("host"):
+            return "unconfigured"
+
+        try:
+            client = RunnerClient(config["host"], config.get("runner_port", RUNNER_PORT))
+            client.health()
+            return "online"
+        except (urllib.error.URLError, OSError, json.JSONDecodeError):
+            return "offline"
+
+    async def fetch_host_mac(self) -> dict:
+        # Called from the "Detect MAC from host" button in
+        # ApolloConfigSection.tsx - requires the host to already be
+        # reachable (which is why it lives in the config screen, not in
+        # Quick Access), persists the result so wake_host can use it later
+        # once the host is off and can no longer be asked directly.
+        config = await self.get_config()
+        host = config.get("host")
+        if not host:
+            return {"ok": False, "error": "Configure the Apollo host first (Apollo Config tab)"}
+
+        try:
+            client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
+            result = client.get_mac()
+            mac = result.get("mac")
+            if not mac:
+                return {"ok": False, "error": "The Runner could not detect a MAC address on the host"}
+            config["mac_address"] = mac
+            await self.save_config(config)
+            return {"ok": True, "mac": mac}
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            decky.logger.error(f"Failed to fetch the host MAC from the Runner: {e}")
+            return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}"}
+
+    async def shutdown_host(self) -> dict:
+        # "Turn off host" button in QuickAccessContent.tsx, gated behind a
+        # ConfirmModal on the frontend (destructive and hard to reverse
+        # without Wake-on-LAN already configured).
+        config = await self.get_config()
+        host = config.get("host")
+        if not host:
+            return {"ok": False, "error": "Configure the Apollo host first (Apollo Config tab)"}
+
+        try:
+            client = RunnerClient(host, config.get("runner_port", RUNNER_PORT))
+            return client.shutdown()
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            decky.logger.error(f"Failed to shut down the host via the Runner: {e}")
+            return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}"}
+
+    async def wake_host(self) -> dict:
+        # "Wake host" button in QuickAccessContent.tsx. Only works if the
+        # host's NIC/BIOS actually has Wake-on-LAN enabled, which is
+        # outside this code's control - out of scope to verify from here
+        # (see docs/prd.md Phase 6).
+        config = await self.get_config()
+        mac = config.get("mac_address")
+        if not mac:
+            return {
+                "ok": False,
+                "error": "No MAC address saved yet - detect it from the Apollo Config tab while the host is on",
+            }
+
+        try:
+            packet = build_magic_packet(mac)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                sock.sendto(packet, ("255.255.255.255", 9))
+            return {"ok": True}
+        except OSError as e:
+            decky.logger.error(f"Failed to send the Wake-on-LAN packet: {e}")
+            return {"ok": False, "error": f"Failed to send the Wake-on-LAN packet: {e}"}
 
     async def _main(self):
         decky.logger.info("MoonProfile loaded")

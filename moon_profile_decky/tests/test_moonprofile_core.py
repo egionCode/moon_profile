@@ -6,7 +6,13 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "py_modules"))
 
-from moonprofile_core import build_display_commands, build_restore_commands, classify_apollo_error, detect_context
+from moonprofile_core import (
+    build_display_commands,
+    build_magic_packet,
+    build_restore_commands,
+    classify_apollo_error,
+    detect_context,
+)
 import json
 import urllib.error
 
@@ -178,6 +184,30 @@ class TestBuildRestoreCommands:
             "sleep 1",
             "kscreen-doctor output.HDMI-A-1.disable",
         ]
+
+
+class TestBuildMagicPacket:
+    def test_builds_6xff_plus_16x_mac_for_colon_separated_address(self):
+        packet = build_magic_packet("aa:bb:cc:dd:ee:ff")
+
+        assert packet[:6] == b"\xff" * 6
+        assert len(packet) == 102  # 6 + 16*6
+        assert packet[6:12] == bytes.fromhex("aabbccddeeff")
+        assert packet[6:12] * 16 == packet[6:]
+
+    def test_accepts_dash_separated_address(self):
+        packet_dash = build_magic_packet("aa-bb-cc-dd-ee-ff")
+        packet_colon = build_magic_packet("aa:bb:cc:dd:ee:ff")
+
+        assert packet_dash == packet_colon
+
+    def test_rejects_an_address_with_the_wrong_number_of_parts(self):
+        with pytest.raises(ValueError):
+            build_magic_packet("aa:bb:cc:dd:ee")
+
+    def test_rejects_an_address_with_non_hex_parts(self):
+        with pytest.raises(ValueError):
+            build_magic_packet("zz:bb:cc:dd:ee:ff")
 
 
 class TestClassifyApolloError:

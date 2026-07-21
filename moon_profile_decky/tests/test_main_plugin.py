@@ -58,6 +58,7 @@ class TestConfigDefaults:
         assert "runner_host" not in config
         assert config["runner_port"] == plugin_module.RUNNER_PORT
         assert config["steamgriddb_api_key"] == ""
+        assert config["mac_address"] == ""
 
     async def test_loading_an_old_config_file_does_not_reintroduce_runner_host(self, plugin_module, tmp_path):
         import json
@@ -88,3 +89,4 @@ class TestConfigDefaults:
         loaded = await plugin.Plugin().get_config()
 
         assert loaded["steamgriddb_api_key"] == ""
+        assert loaded["mac_address"] == ""

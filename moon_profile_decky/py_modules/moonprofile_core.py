@@ -133,6 +133,25 @@ def build_restore_commands(host_cfg: dict) -> list:
     return commands
 
 
+def build_magic_packet(mac: str) -> bytes:
+    """
+    Builds a standard Wake-on-LAN magic packet for the given MAC address:
+    6 bytes of 0xFF followed by the target MAC repeated 16 times, sent as
+    a broadcast UDP datagram (main.py:wake_host). Accepts both ':'- and
+    '-'-separated MAC notation (depends on where the address was copied
+    from - the Runner's /system/mac reports ':'-separated).
+    """
+    separator = ":" if ":" in mac else "-"
+    parts = mac.split(separator)
+    if len(parts) != 6:
+        raise ValueError(f"'{mac}' is not a valid MAC address")
+    try:
+        mac_bytes = bytes(int(part, 16) for part in parts)
+    except ValueError:
+        raise ValueError(f"'{mac}' is not a valid MAC address")
+    return b"\xff" * 6 + mac_bytes * 16
+
+
 class ApolloClient:
     """
     Minimal client (stdlib only, no 'requests') for the Apollo REST API.
