@@ -414,6 +414,67 @@ reference (as already done for the game-screen button, the `gameid`
 fix, and the Tauri tray/menu API), implement directly on the
 already-validated stack.
 
+### Phase 6: Host power control (shutdown, Wake-on-LAN, status)
+
+Quick Access only closed the connection and synced games so far - nothing
+told the user whether the host was even reachable, and there was no way
+to turn it off or back on from the Deck. This phase adds a status
+indicator plus power buttons to `QuickAccessContent.tsx`, split across the
+same three layers as everything else host-related (see "The Runner
+controls everything that touches the host" in `AGENTS.md`):
+
+- **Runner (Rust)**, new `src-tauri/src/power.rs`: `detect_primary_mac`
+  reads `/sys/class/net/*/address` + `.../operstate` (parameterized by
+  path, same testability pattern as `detect_context(drm_path=...)` in
+  `moonprofile_core.py`), skipping `lo` and virtual interfaces
+  (`docker`/`veth`/`virbr`/`br-`/`wg`/`tun`) and preferring one that's
+  actually up. `shutdown_command()` is a pure function returning
+  `("systemctl", ["poweroff"])`, kept separate from execution so it has an
+  actual unit test. `server.rs` gained three routes: `GET /health` (cheap
+  liveness probe, deliberately not reusing `/games` which fires a sync
+  notification and touches kscreen-doctor indirectly), `GET /system/mac`,
+  and `POST /system/shutdown` (responds `{"ok": true}` first, then, after
+  a short delay so the HTTP response actually makes it out over the
+  network, runs `shutdown_command()` in the background - same
+  respond-before-side-effect ordering already used by
+  `close_session_now`/the watchdog in `session.rs`).
+- **Decky backend (Python)**: `moonprofile_core.py` gained
+  `build_magic_packet(mac)` (parses `:`- or `-`-separated MAC, raises
+  `ValueError` on bad input, returns the 6xFF + 16x-MAC magic packet).
+  `main.py`'s `RunnerClient` gained `health()` (short 2s timeout,
+  deliberately shorter than the other methods' 10-15s so polling from
+  Quick Access doesn't hang waiting on a host that's already off),
+  `get_mac()`, and `shutdown()`. New `Plugin` methods: `get_host_status()`
+  (`"unconfigured"` / `"online"` / `"offline"`), `fetch_host_mac()` (asks
+  the Runner, persists into `config["mac_address"]`), `shutdown_host()`,
+  and `wake_host()` (builds the magic packet from the saved MAC and sends
+  it via a broadcast UDP socket to port 9 - only works if the host's
+  NIC/BIOS actually has Wake-on-LAN enabled, which is outside this code's
+  control).
+- **Decky frontend (TS)**: `QuickAccessContent.tsx` polls
+  `getHostStatus()` on an interval and shows the translated status, plus a
+  "Turn off host" button (gated behind `ConfirmModal` from `@decky/ui`,
+  since this is destructive and hard to reverse without WoL already
+  configured, only enabled when online) and a "Wake host" button (only
+  enabled when offline). `ApolloConfigSection.tsx` gained a read-only MAC
+  field and a "Detect MAC from host" button (calls `fetch_host_mac`,
+  requires the host to already be reachable, which is why it lives in the
+  config screen and not in Quick Access).
+
+**Known, accepted test gap:** there is no integration test that actually
+invokes `POST /system/shutdown` end-to-end, nor one that exercises the
+real `GET /system/mac` handler - the first would genuinely power off
+whatever machine runs `cargo test`, the second depends on the real
+`/sys/class/net` of that machine (not deterministic in CI). Both are
+covered only by unit tests of the pure functions underneath
+(`shutdown_command`, `detect_primary_mac` against fixtures), documented
+inline where the gap is and in `AGENTS.md`.
+
+**Out of scope for this phase:** verifying, from this codebase, that
+`systemctl poweroff` is actually passwordless for the active session
+(polkit `allow_active`) and that Wake-on-LAN is enabled in the host's
+BIOS/NIC - both need to be confirmed by hand on the real machine.
+
 ## Technical references
 
 ### Apollo API (inherited from Sunshine)
