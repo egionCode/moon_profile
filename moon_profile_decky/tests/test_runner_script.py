@@ -23,7 +23,10 @@ _spec.loader.exec_module(runner_script)
 
 
 _PROFILE = {
-    "host": {"target_output": "HDMI-A-1", "resolution": "1920x1080", "fps": 60, "hdr": False, "disable_outputs": []}
+    "resolution": "1920x1080",
+    "fps": 60,
+    "hdr": False,
+    "host": {"target_output": "HDMI-A-1", "disable_outputs": []},
 }
 
 

@@ -1,16 +1,10 @@
 export interface MoonlightConfig {
-  resolution: string; // ex: "3840x2160"
-  fps: number; // ex: 60
   bitrate: number; // in kbps, ex: 150000
   codec: "HEVC" | "AV1" | "H264";
-  hdr: boolean;
 }
 
 export interface HostConfig {
   target_output: string; // ex: "HDMI-A-1"
-  resolution: string; // ex: "3840x2160"
-  fps: number; // ex: 60
-  hdr: boolean;
   wcg: boolean; // Wide Color Gamut
   disable_outputs: string[]; // ex: ["DP-3"]
   // Sends the cursor to the bottom-right corner of the target output on
@@ -26,9 +20,17 @@ export interface HostConfig {
 }
 
 export interface Profile {
-  id: string; // ex: "docked-tv-4k-hdr"
+  id: string; // ex: "1" (auto-generated sequential int, as a string)
   name: string; // ex: "Docked TV 4K HDR"
   trigger: "docked" | "handheld" | "manual";
+  // Single source of truth for resolution/fps/HDR - drives BOTH the
+  // host's kscreen-doctor mode switch AND the Moonlight stream's
+  // --resolution/--fps/--hdr, there's no legitimate reason for the two
+  // sides to ever differ (used to be duplicated under moonlight/host,
+  // see git history).
+  resolution: string; // ex: "3840x2160"
+  fps: number; // ex: 60
+  hdr: boolean;
   moonlight: MoonlightConfig;
   host: HostConfig;
 }
@@ -94,10 +96,10 @@ export interface ListGamesResult {
 
 // One resolution/fps combo a display actually supports (from
 // kscreen-doctor's EDID-derived "modes" list, already deduped/sorted by
-// the Runner - see displays.rs's modes_from_kscreen). Drives BOTH
-// host.resolution/fps and moonlight.resolution/fps in ProfileEditor.tsx
-// - there's no reason for the two to differ, the stream should always
-// match what the host output is actually being switched to.
+// the Runner - see displays.rs's modes_from_kscreen). Drives the single
+// Profile.resolution/fps in ProfileEditor.tsx - there's no reason for
+// host and stream to differ, it should always match what the host
+// output is actually being switched to.
 export interface HostDisplayMode {
   resolution: string; // ex: "3840x2160"
   fps: number;

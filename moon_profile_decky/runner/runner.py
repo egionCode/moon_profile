@@ -149,12 +149,19 @@ def register_with_runner(config: dict, host_app_id: str, profile: dict) -> None:
     logging and moving on (see main() below, which aborts the launch if
     this fails, the same way it already aborts if configure_apollo fails).
     """
+    # resolution/fps/hdr are unified at the profile root now (single
+    # source of truth shared with the Moonlight/client side, see
+    # types.ts:Profile) - build_display_commands/build_restore_commands
+    # still take a flat host-shaped dict (unchanged, same shape their
+    # tests already use), so merge them in here rather than touching
+    # moonprofile_core.py itself.
+    host_cfg = {**profile["host"], "resolution": profile["resolution"], "fps": profile["fps"], "hdr": profile["hdr"]}
     body = json.dumps({
         "app_id": host_app_id,
         "username": config["username"],
         "password": config["password"],
-        "display_commands": build_display_commands(profile["host"]),
-        "restore_commands": build_restore_commands(profile["host"]),
+        "display_commands": build_display_commands(host_cfg),
+        "restore_commands": build_restore_commands(host_cfg),
     }).encode()
     req = urllib.request.Request(
         f"http://{config['host']}:{config.get('runner_port', RUNNER_PORT)}/session/register",
@@ -214,15 +221,16 @@ def main() -> None:
         print(f"Failed to register with the MoonProfile Runner (mandatory): {e}", file=sys.stderr)
         sys.exit(1)
 
-    moonlight_cfg = result["profile"]["moonlight"]
+    profile = result["profile"]
+    moonlight_cfg = profile["moonlight"]
     codec_flag = CODEC_FLAGS.get(moonlight_cfg["codec"], "auto")
-    hdr_flag = "--hdr" if moonlight_cfg.get("hdr") else "--no-hdr"
+    hdr_flag = "--hdr" if profile.get("hdr") else "--no-hdr"
 
     args = [
         "flatpak", "run", "com.moonlight_stream.Moonlight", "stream",
         config["host"], APP_NAME,
-        "--resolution", moonlight_cfg["resolution"],
-        "--fps", str(moonlight_cfg["fps"]),
+        "--resolution", profile["resolution"],
+        "--fps", str(profile["fps"]),
         "--bitrate", str(moonlight_cfg["bitrate"]),
         "--video-codec", codec_flag,
         hdr_flag,

@@ -25,29 +25,26 @@ type ScrollProps = { children?: ReactNode; style?: CSSProperties; focusable?: bo
 const ScrollPanelGroup = ScrollPanelGroupUntyped as FC<ScrollProps>;
 const ScrollPanel = ScrollPanelUntyped as FC<ScrollProps>;
 
-function blankProfile(): Profile {
-  return {
-    id: "",
-    name: "",
-    trigger: "manual",
-    moonlight: { resolution: "1920x1080", fps: 60, bitrate: 20000, codec: "HEVC", hdr: false },
-    host: { target_output: "", resolution: "1920x1080", fps: 60, hdr: false, wcg: false, disable_outputs: [] },
-  };
+// The id is just an internal key to tell profiles apart in the array
+// (see onDelete/onSaveFromEditor below) - not shown in the UI anymore,
+// so a plain incrementing integer (as a string) is enough; no need for
+// a human-meaningful slug.
+function nextProfileId(existingIds: string[]): string {
+  const max = existingIds.reduce((acc, id) => Math.max(acc, Number(id) || 0), 0);
+  return String(max + 1);
 }
 
-// Generates a new unique id from the name (slug), used both for "New
-// profile" and for "Duplicate" (which needs an id different from the
-// original).
-function makeUniqueId(base: string, existingIds: string[]): string {
-  const slug = base.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "profile";
-  if (!existingIds.includes(slug)) {
-    return slug;
-  }
-  let i = 2;
-  while (existingIds.includes(`${slug}-${i}`)) {
-    i++;
-  }
-  return `${slug}-${i}`;
+function blankProfile(existingIds: string[]): Profile {
+  return {
+    id: nextProfileId(existingIds),
+    name: "",
+    trigger: "manual",
+    resolution: "1920x1080",
+    fps: 60,
+    hdr: false,
+    moonlight: { bitrate: 20000, codec: "HEVC" },
+    host: { target_output: "", wcg: false, disable_outputs: [] },
+  };
 }
 
 // Full settings page, opened via routerHook (see index.tsx) from the gear
@@ -85,7 +82,7 @@ export function SettingsPage() {
   };
 
   const onNew = () => {
-    setEditing({ profile: blankProfile(), isNew: true });
+    setEditing({ profile: blankProfile(profiles.map((p) => p.id)), isNew: true });
   };
 
   const onEdit = (profile: Profile) => {
@@ -93,7 +90,7 @@ export function SettingsPage() {
   };
 
   const onDuplicate = (profile: Profile) => {
-    const newId = makeUniqueId(`${profile.id}-copy`, profiles.map((p) => p.id));
+    const newId = nextProfileId(profiles.map((p) => p.id));
     setEditing({ profile: { ...profile, id: newId, name: `${profile.name} (copy)` }, isNew: true });
   };
 
@@ -150,7 +147,6 @@ export function SettingsPage() {
         <ProfileEditor
           profile={editing.profile}
           isNew={editing.isNew}
-          existingIds={profiles.map((p) => p.id)}
           onSave={onSaveFromEditor}
           onCancel={closeEditor}
         />

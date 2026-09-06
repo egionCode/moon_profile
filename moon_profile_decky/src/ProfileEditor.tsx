@@ -1,14 +1,23 @@
 import { CSSProperties, useEffect, useState } from "react";
-import { PanelSection, PanelSectionRow, TextField, DropdownItem, ToggleField, DialogButton, Focusable } from "@decky/ui";
+import {
+  PanelSection,
+  PanelSectionRow,
+  TextField,
+  DropdownItem,
+  ToggleField,
+  SliderField,
+  DialogButton,
+  Focusable,
+} from "@decky/ui";
 import { toaster } from "@decky/api";
 import { listHostDisplays } from "./api";
-import { HostDisplay, Profile } from "./types";
+import { HostDisplay, HostDisplayMode, Profile } from "./types";
 
 // Same pattern as ProfileList.tsx: "ButtonItem"/"TextField" occupy the
 // whole row by themselves, which is why two side by side (Cancel/Save,
 // Width/Height) would stack instead of splitting the line. A Focusable
 // with display:flex, with each child wrapped in a div with flexGrow:1,
-// solves both cases.
+// solves that.
 const rowStyle: CSSProperties = { display: "flex", flexDirection: "row", gap: "8px" };
 const halfStyle: CSSProperties = { flexGrow: 1, minWidth: 0 };
 
@@ -39,27 +48,84 @@ function splitResolution(value: string): { width: string; height: string } {
   return { width, height };
 }
 
-// Sets the SAME resolution/fps on both host and moonlight at once -
-// there's exactly one "Resolution" concept in the UI now (see the
-// "Display" section below): whatever the host output is switched to is
-// also what Moonlight streams at, no reason for the two to ever differ.
+// Sets the SAME resolution/fps at the Profile root - there's exactly one
+// "Resolution" concept now (used to be duplicated under host/moonlight,
+// see git history): whatever the host output is switched to is also what
+// Moonlight streams at, no reason for the two to ever differ.
 function applyResolution(draft: Profile, resolution: string, fps: number): Profile {
-  return {
-    ...draft,
-    moonlight: { ...draft.moonlight, resolution, fps },
-    host: { ...draft.host, resolution, fps },
-  };
+  return { ...draft, resolution, fps };
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+// Common display aspect ratios - anything close enough to one of these
+// (a portrait/ultrawide monitor doesn't map to any) snaps to its label;
+// otherwise falls back to the raw reduced ratio (ex: "21:9") so nothing
+// is silently misrepresented.
+const KNOWN_RATIOS: [string, number][] = [
+  ["4:3", 4 / 3],
+  ["16:10", 16 / 10],
+  ["16:9", 16 / 9],
+];
+
+function aspectRatioLabel(resolution: string): string {
+  const [wStr, hStr] = resolution.split("x");
+  const width = Number(wStr);
+  const height = Number(hStr);
+  if (!width || !height) {
+    return "?";
+  }
+  const ratio = width / height;
+  let best = KNOWN_RATIOS[0];
+  let bestDiff = Infinity;
+  for (const candidate of KNOWN_RATIOS) {
+    const diff = Math.abs(ratio - candidate[1]);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = candidate;
+    }
+  }
+  if (bestDiff < 0.02) {
+    return best[0];
+  }
+  const divisor = gcd(width, height);
+  return `${width / divisor}:${height / divisor}`;
+}
+
+// Groups a display's real modes (as reported by the Runner/kscreen-doctor)
+// by aspect ratio, so the "Aspect ratio" / "Resolution" / "FPS" selects
+// only ever offer combinations the monitor actually supports - no static
+// table up to some resolution ceiling, purely derived from HostDisplay.modes.
+function groupModesByAspectRatio(modes: HostDisplayMode[]) {
+  const resolutionsByRatio = new Map<string, string[]>();
+  const fpsByResolution = new Map<string, number[]>();
+  for (const mode of modes) {
+    const ratio = aspectRatioLabel(mode.resolution);
+    const resolutions = resolutionsByRatio.get(ratio) ?? [];
+    if (!resolutions.includes(mode.resolution)) {
+      resolutions.push(mode.resolution);
+    }
+    resolutionsByRatio.set(ratio, resolutions);
+
+    const fpsList = fpsByResolution.get(mode.resolution) ?? [];
+    if (!fpsList.includes(mode.fps)) {
+      fpsList.push(mode.fps);
+    }
+    fpsByResolution.set(mode.resolution, fpsList);
+  }
+  return { ratios: [...resolutionsByRatio.keys()], resolutionsByRatio, fpsByResolution };
 }
 
 interface ProfileEditorProps {
   profile: Profile;
   isNew: boolean;
-  existingIds: string[];
   onSave: (profile: Profile) => void;
   onCancel: () => void;
 }
 
-export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }: ProfileEditorProps) {
+export function ProfileEditor({ profile, isNew, onSave, onCancel }: ProfileEditorProps) {
   const [draft, setDraft] = useState<Profile>(profile);
   const [disableOutputsText, setDisableOutputsText] = useState(draft.host.disable_outputs.join(", "));
   // The host's real monitors + their supported resolutions/fps (via the
@@ -82,13 +148,19 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
       .finally(() => setLoadingDisplays(false));
   }, []);
 
-  const manualRes = splitResolution(draft.host.resolution);
+  const manualRes = splitResolution(draft.resolution);
   const selectedDisplay = displays.find((d) => d.name === draft.host.target_output);
-  const modeOptions = (selectedDisplay?.modes ?? []).map((m) => ({
-    data: `${m.resolution}@${m.fps}`,
-    label: `${m.resolution} @ ${m.fps} FPS`,
+  const modeGroups = groupModesByAspectRatio(selectedDisplay?.modes ?? []);
+  const currentRatio = aspectRatioLabel(draft.resolution);
+  const ratioOptions = modeGroups.ratios.map((r) => ({ data: r, label: r }));
+  const resolutionOptions = (modeGroups.resolutionsByRatio.get(currentRatio) ?? []).map((r) => ({
+    data: r,
+    label: r,
   }));
-  const selectedModeKey = `${draft.host.resolution}@${draft.host.fps}`;
+  const fpsOptions = (modeGroups.fpsByResolution.get(draft.resolution) ?? []).map((f) => ({
+    data: f,
+    label: `${f} FPS`,
+  }));
 
   const targetOutputOptions = displays.map((d) => ({
     data: d.name,
@@ -100,15 +172,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
       toaster.toast({ title: "MoonProfile", body: "Profile name cannot be empty" });
       return;
     }
-    if (!draft.id.trim()) {
-      toaster.toast({ title: "MoonProfile", body: "Profile id cannot be empty" });
-      return;
-    }
-    if (isNew && existingIds.includes(draft.id)) {
-      toaster.toast({ title: "MoonProfile", body: `A profile with id "${draft.id}" already exists` });
-      return;
-    }
-    if (!RESOLUTION_RE.test(draft.host.resolution)) {
+    if (!RESOLUTION_RE.test(draft.resolution)) {
       toaster.toast({ title: "MoonProfile", body: 'Invalid resolution (format "3840x2160")' });
       return;
     }
@@ -130,9 +194,6 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
   return (
     <>
       <PanelSection title={isNew ? "New profile" : `Edit: ${profile.name}`}>
-        <PanelSectionRow>
-          <TextField label="Id" disabled={!isNew} value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} />
-        </PanelSectionRow>
         <PanelSectionRow>
           <TextField label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         </PanelSectionRow>
@@ -168,13 +229,36 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
             </PanelSectionRow>
             <PanelSectionRow>
               <DropdownItem
-                label="Resolution"
-                rgOptions={modeOptions}
-                selectedOption={selectedModeKey}
+                label="Aspect ratio"
+                rgOptions={ratioOptions}
+                selectedOption={currentRatio}
                 onChange={(o) => {
-                  const [resolution, fps] = o.data.split("@");
-                  setDraft((prev) => applyResolution(prev, resolution, Number(fps)));
+                  const resolutions = modeGroups.resolutionsByRatio.get(o.data) ?? [];
+                  const resolution = resolutions[0];
+                  const fps = (modeGroups.fpsByResolution.get(resolution) ?? [draft.fps])[0];
+                  if (resolution) {
+                    setDraft((prev) => applyResolution(prev, resolution, fps));
+                  }
                 }}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <DropdownItem
+                label="Resolution"
+                rgOptions={resolutionOptions}
+                selectedOption={draft.resolution}
+                onChange={(o) => {
+                  const fps = (modeGroups.fpsByResolution.get(o.data) ?? [draft.fps])[0];
+                  setDraft((prev) => applyResolution(prev, o.data, fps));
+                }}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <DropdownItem
+                label="FPS"
+                rgOptions={fpsOptions}
+                selectedOption={draft.fps}
+                onChange={(o) => setDraft((prev) => applyResolution(prev, prev.resolution, o.data))}
               />
             </PanelSectionRow>
           </>
@@ -194,7 +278,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
                     label="Width"
                     mustBeNumeric
                     value={manualRes.width}
-                    onChange={(e) => setDraft(applyResolution(draft, `${e.target.value}x${manualRes.height}`, draft.host.fps))}
+                    onChange={(e) => setDraft(applyResolution(draft, `${e.target.value}x${manualRes.height}`, draft.fps))}
                   />
                 </div>
                 <div style={halfStyle}>
@@ -202,7 +286,7 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
                     label="Height"
                     mustBeNumeric
                     value={manualRes.height}
-                    onChange={(e) => setDraft(applyResolution(draft, `${manualRes.width}x${e.target.value}`, draft.host.fps))}
+                    onChange={(e) => setDraft(applyResolution(draft, `${manualRes.width}x${e.target.value}`, draft.fps))}
                   />
                 </div>
               </Focusable>
@@ -211,47 +295,14 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
               <TextField
                 label="FPS"
                 mustBeNumeric
-                value={String(draft.host.fps)}
-                onChange={(e) => setDraft(applyResolution(draft, draft.host.resolution, Number(e.target.value) || 0))}
+                value={String(draft.fps)}
+                onChange={(e) => setDraft(applyResolution(draft, draft.resolution, Number(e.target.value) || 0))}
               />
             </PanelSectionRow>
           </>
         )}
-      </PanelSection>
-
-      <PanelSection title="Moonlight (client)">
         <PanelSectionRow>
-          <TextField
-            label="Bitrate (kbps)"
-            mustBeNumeric
-            value={String(draft.moonlight.bitrate)}
-            onChange={(e) => setDraft({ ...draft, moonlight: { ...draft.moonlight, bitrate: Number(e.target.value) || 0 } })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <DropdownItem
-            label="Codec"
-            rgOptions={CODEC_OPTIONS}
-            selectedOption={draft.moonlight.codec}
-            onChange={(o) => setDraft({ ...draft, moonlight: { ...draft.moonlight, codec: o.data } })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField
-            label="HDR"
-            checked={draft.moonlight.hdr}
-            onChange={(checked) => setDraft({ ...draft, moonlight: { ...draft.moonlight, hdr: checked } })}
-          />
-        </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection title="Host (Apollo)">
-        <PanelSectionRow>
-          <ToggleField
-            label="HDR"
-            checked={draft.host.hdr}
-            onChange={(checked) => setDraft({ ...draft, host: { ...draft.host, hdr: checked } })}
-          />
+          <ToggleField label="HDR" checked={draft.hdr} onChange={(checked) => setDraft({ ...draft, hdr: checked })} />
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
@@ -303,6 +354,32 @@ export function ProfileEditor({ profile, isNew, existingIds, onSave, onCancel }:
             />
           </PanelSectionRow>
         )}
+      </PanelSection>
+
+      <PanelSection title="Streaming quality">
+        <PanelSectionRow>
+          <SliderField
+            // showValue's auto label renders the slider's raw position as
+            // a "%" of the min/max range, not our unit - baking the actual
+            // Mbps value into the label itself instead avoids that.
+            label={`Bitrate: ${Math.round(draft.moonlight.bitrate / 1000)} Mbps`}
+            editableValue
+            value={draft.moonlight.bitrate / 1000}
+            min={1}
+            max={300}
+            onChange={(mbps) =>
+              setDraft({ ...draft, moonlight: { ...draft.moonlight, bitrate: Math.round(mbps * 1000) } })
+            }
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DropdownItem
+            label="Codec"
+            rgOptions={CODEC_OPTIONS}
+            selectedOption={draft.moonlight.codec}
+            onChange={(o) => setDraft({ ...draft, moonlight: { ...draft.moonlight, codec: o.data } })}
+          />
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection>
