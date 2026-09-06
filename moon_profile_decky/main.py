@@ -1,3 +1,4 @@
+import asyncio
 import os
 import socket
 import stat
@@ -68,6 +69,14 @@ class RunnerClient:
         # with {"ok": False, "error": "..."} (it doesn't raise).
         req = urllib.request.Request(f"{self.base_url}/session/close", data=b"", method="POST")
         with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+
+    def session_status(self) -> dict:
+        # {"app_id": str | None, "running": bool} - read-only, mirrors the
+        # session.rs ActiveSession the watchdog already tracks (see
+        # get_session_status below).
+        req = urllib.request.Request(f"{self.base_url}/session/status")
+        with urllib.request.urlopen(req, timeout=2) as resp:
             return json.loads(resp.read())
 
     def health(self) -> dict:
@@ -183,7 +192,7 @@ class Plugin:
     async def detect_context(self) -> str:
         return detect_context()
 
-    async def stop_stream(self) -> dict:
+    async def _close_session(self) -> dict:
         # The Runner (host) is the one that actually closes things: it
         # already has the session registered by runner.py at launch
         # (app_id + credentials in memory), kills the game if it's still
@@ -192,6 +201,13 @@ class Plugin:
         # (neither do nor undo), calling it directly without the Runner
         # would just drop the connection without restoring anything, so
         # an error here is reported as a real error, not a silent fallback.
+        #
+        # Shared by the manual "Close connection" button (stop_stream) and
+        # the Moonlight-process watcher (_watch_moonlight_process) - both
+        # want the exact same close behavior, the only difference is what
+        # triggers it. Idempotent: if no session is registered, the Runner
+        # replies {"ok": False, "error": "..."} instead of raising, which
+        # is fine for the watcher (nothing to clean up).
         config = await self.get_config()
         if not config.get("host"):
             return {"ok": False, "error": "Configure the Apollo host first"}
@@ -207,6 +223,9 @@ class Plugin:
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             decky.logger.error(f"Failed to talk to the MoonProfile Runner to close the session: {e}")
             return {"ok": False, "error": f"Could not talk to the MoonProfile Runner: {e}"}
+
+    async def stop_stream(self) -> dict:
+        return await self._close_session()
 
     async def list_host_games(self) -> dict:
         # Called by the frontend (gameSync.ts) for the "Sync host games"
@@ -262,6 +281,29 @@ class Plugin:
             return "online"
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
             return "offline"
+
+    async def get_session_status(self) -> dict:
+        # Polled by QuickAccessContent.tsx to show "Game X is running".
+        # Resolves the friendly name from game_shortcuts.json (the Runner
+        # only knows the app_id, not a display name).
+        config = await self.get_config()
+        if not config.get("host"):
+            return {"running": False, "app_id": None, "name": None}
+
+        try:
+            client = RunnerClient(config["host"], config.get("runner_port", RUNNER_PORT))
+            status = client.session_status()
+        except (urllib.error.URLError, OSError, json.JSONDecodeError):
+            return {"running": False, "app_id": None, "name": None}
+
+        app_id = status.get("app_id")
+        name = None
+        if app_id:
+            shortcuts = await self.get_game_shortcuts()
+            entry = shortcuts.get(app_id)
+            if entry:
+                name = entry.get("name")
+        return {"running": bool(status.get("running")), "app_id": app_id, "name": name}
 
     async def fetch_host_mac(self) -> dict:
         # Called from the "Detect MAC from host" button in
@@ -330,10 +372,71 @@ class Plugin:
             decky.logger.error(f"Failed to send the Wake-on-LAN packet: {e}")
             return {"ok": False, "error": f"Failed to send the Wake-on-LAN packet: {e}"}
 
+    def _is_moonlight_running(self) -> bool:
+        # Real bug found on-device, round 1: grepping /proc/*/cmdline for
+        # the app id (the way runner.py invokes it: os.execvp("flatpak",
+        # [..., "com.moonlight_stream.Moonlight", ...])) is unreliable -
+        # "flatpak run" execs again into bwrap to enter the sandbox,
+        # replacing its own argv, so the app id disappears from that PID's
+        # cmdline shortly after launch, well before the user closes
+        # anything.
+        #
+        # Round 2: switched to "flatpak ps" (flatpak's own supported way
+        # to list running app instances) - still didn't work, because it
+        # needs the SAME D-Bus session the sandboxed app is running under
+        # (user "deck"'s session), and the decky backend runs as root, a
+        # completely different session - it silently came back empty even
+        # with Moonlight genuinely running.
+        #
+        # Reading /proc/<pid>/root/.flatpak-info is pure filesystem access
+        # (root can always traverse another process's /proc/<pid>/root,
+        # no D-Bus/session needed): flatpak writes this file inside EVERY
+        # sandboxed process's own root, unconditionally, specifically for
+        # this kind of introspection - and unlike argv, it isn't replaced
+        # by the bwrap exec, it's a property of the sandboxed root itself.
+        needle = b"com.moonlight_stream.Moonlight"
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/root/.flatpak-info", "rb") as f:
+                    if needle in f.read():
+                        return True
+            except OSError:
+                continue
+        return False
+
+    async def _watch_moonlight_process(self):
+        # Closes the gap where the Deck's own Steam overlay ("Exit Game")
+        # kills the local Moonlight process directly, without going
+        # through stop_stream/_close_session - the host would otherwise
+        # never find out and the game (plus the switched display) is left
+        # orphaned forever (see session.rs's watchdog, which only reacts
+        # to the GAME process dying, not the Deck's client).
+        #
+        # Deliberately only reacts to the Moonlight process DISAPPEARING
+        # (seen -> not seen), never to it simply not being seen yet (no
+        # game running is the common idle state) - and does NOT trigger
+        # on a Deck suspend/lock, which just kills the network, not the
+        # Moonlight process itself (still alive, frozen, until it
+        # reconnects or the user resumes). Only a real process death
+        # (Steam's Exit Game, a crash, or the user closing Moonlight
+        # itself) looks like seen -> not seen.
+        seen = False
+        while True:
+            await asyncio.sleep(5)
+            seen_now = self._is_moonlight_running()
+            if seen and not seen_now:
+                decky.logger.info("Moonlight process disappeared (Exit Game?) - closing the session on the host")
+                await self._close_session()
+            seen = seen_now
+
     async def _main(self):
         decky.logger.info("MoonProfile loaded")
+        self._watch_task = asyncio.create_task(self._watch_moonlight_process())
 
     async def _unload(self):
+        self._watch_task.cancel()
         decky.logger.info("MoonProfile unloaded")
 
     async def _uninstall(self):
