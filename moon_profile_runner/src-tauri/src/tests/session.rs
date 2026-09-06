@@ -321,6 +321,51 @@ async fn close_session_now_kills_the_game_when_it_is_still_running() {
     drop(fake);
 }
 
+// Real bug found on-device: kill_game_process used to shell out to
+// `pkill -f AppId=<id>`, which only searches cmdline - for a game whose
+// only matching signal is the Proton compat-data env var (real exes
+// often don't carry "AppId=" themselves, see env_var_matches_app_id),
+// pkill silently killed nothing, the process outlived the whole 20s
+// grace period. Locks in that killing now goes through sysinfo directly
+// (signal_app_id_processes), which uses the exact same match as
+// is_app_id_running.
+#[tokio::test]
+async fn close_session_now_kills_a_game_only_matching_via_the_compatdata_env_var() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/login"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/apps/close"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock_server)
+        .await;
+
+    let fake = FakeGameProcess::spawn_with_compatdata_env("900014");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let state = empty_state();
+    *state.lock().await = Some(plain_session("900014", "user", "pass"));
+    let (tx, mut _rx) = mpsc::unbounded_channel();
+
+    let response = close_session_now(
+        Extension(state.clone()),
+        Extension(ApolloBaseUrl(mock_server.uri())),
+        Extension(tx),
+    )
+    .await;
+    assert!(response.0.ok);
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while is_app_id_running("900014") {
+        assert!(tokio::time::Instant::now() < deadline, "fake process did not die in time");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    drop(fake);
+}
+
 #[tokio::test]
 async fn close_session_now_returns_before_the_kill_grace_period_would_finish() {
     // Proves the new order: Apollo is notified (and the response comes

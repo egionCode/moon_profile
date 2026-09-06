@@ -24,12 +24,44 @@ fn cmd_arg_matches_app_id_cases() {
     assert!(!cmd_arg_matches_app_id("nothing relevant", "AppId=42"));
 }
 
+// Real bug found on-device: non-Steam shortcuts are registered with the
+// EXTENDED 64-bit GameID Steam needs for steam://rungameid/ (see games.rs)
+// - is_app_id_running/kill_game_process must resolve it back to the
+// legacy 32-bit id (what the real process's "AppId=" cmdline carries)
+// before matching, or they never find the process at all.
+#[test]
+fn resolve_legacy_app_id_extracts_the_legacy_id_from_a_shortcut_gameid() {
+    // (900042u64 << 32) | 0x02000000
+    assert_eq!(resolve_legacy_app_id("3865650988580864"), "900042");
+}
+
+#[test]
+fn resolve_legacy_app_id_leaves_a_real_steam_appid_untouched() {
+    assert_eq!(resolve_legacy_app_id("900042"), "900042");
+}
+
+#[test]
+fn resolve_legacy_app_id_leaves_non_numeric_input_untouched() {
+    assert_eq!(resolve_legacy_app_id("not-a-number"), "not-a-number");
+}
+
 // Test IDs quite distinct (900xxx) to avoid accidentally colliding with
 // a real game's AppId running on the dev machine while testing.
 
 #[tokio::test]
 async fn is_app_id_running_false_when_no_matching_process_exists() {
     assert!(!is_app_id_running("900001"));
+}
+
+#[tokio::test]
+async fn is_app_id_running_true_when_given_the_extended_shortcut_gameid() {
+    let fake = FakeGameProcess::spawn("900044");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // (900044u64 << 32) | 0x02000000 - what's actually registered/passed
+    // around for non-Steam shortcuts, see resolve_legacy_app_id above.
+    assert!(is_app_id_running("3865659578515456"));
+    drop(fake);
 }
 
 #[tokio::test]

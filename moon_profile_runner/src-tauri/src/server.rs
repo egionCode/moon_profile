@@ -20,7 +20,7 @@ use crate::clients::{record_client_middleware, ClientsFilePath, ClientsState};
 use crate::displays::{list_displays, HostDisplay};
 use crate::games::{list_host_games, HostGame};
 use crate::power::{detect_primary_mac, run_shutdown};
-use crate::session::{close_session_now, register_session, ApolloBaseUrl, SessionState};
+use crate::session::{close_session_now, register_session, session_status, ApolloBaseUrl, SessionState};
 
 // Only for the diagnostic prints (register/watchdog/close) - without
 // this the console logs from "tauri dev" didn't tell us WHAT SECOND
@@ -59,13 +59,49 @@ fn cmd_arg_matches_app_id(arg: &str, needle: &str) -> bool {
     }
 }
 
-// Same convention for identifying the right process that
-// main.py:_build_prep_cmd already uses in the undo's
-// "pkill -f AppId=<id>" - except here it's a READ, not a kill.
-// pub(crate) because session.rs (the autonomous-close watchdog) uses the
-// same check, without going through HTTP.
-pub(crate) fn is_app_id_running(app_id: &str) -> bool {
-    let needle = format!("AppId={app_id}");
+// Non-Steam shortcuts are registered (see games.rs's parse_shortcuts_vdf)
+// with the EXTENDED 64-bit GameID Steam needs to launch them via
+// "steam://rungameid/<id>" - (legacy_id << 32) | 0x02000000 - but the
+// actual running process (and its compat-data folder) still carries the
+// original 32-bit legacy id, not the extended one. Real bug found
+// on-device: is_app_id_running/kill_game_process kept comparing against
+// the extended id for every non-Steam game, so neither ever matched the
+// real process - "Game running" in Quick Access never lit up, and
+// kill_game_process always believed "already not running, nothing to
+// kill" even while the game was genuinely alive. Real Steam appids are
+// small and never match this pattern (their low 32 bits are essentially
+// never exactly 0x02000000), so resolving unconditionally is safe.
+pub(crate) fn resolve_legacy_app_id(app_id: &str) -> String {
+    let Ok(value) = app_id.parse::<u64>() else {
+        return app_id.to_string();
+    };
+    if value & 0xFFFF_FFFF == 0x0200_0000 {
+        (value >> 32).to_string()
+    } else {
+        app_id.to_string()
+    }
+}
+
+// A Proton game's real exe often does NOT carry "AppId=<id>" in its own
+// cmdline (that argument is Steam's reaper convention, not something
+// Proton passes down to wine/the game) - only the reaper process is
+// guaranteed to have it. Checking the compat-data env vars Steam DOES
+// export to the whole Proton process tree (STEAM_COMPAT_DATA_PATH,
+// WINEPREFIX, both pointing at .../steamapps/compatdata/<app_id>[/pfx])
+// catches the actual game process too, not just its reaper. Same idea
+// used by the Hydra Launcher fork (services/linux-process-match.ts) for
+// Linux/Proton playtime tracking - matching env vars against the
+// compat-data path is more robust than cmdline alone.
+fn env_var_matches_app_id(value: &str, app_id: &str) -> bool {
+    value.contains(&format!("steamapps/compatdata/{app_id}"))
+}
+
+fn matches_app_id(process: &sysinfo::Process, needle_cmd: &str, app_id: &str) -> bool {
+    process.cmd().iter().any(|arg| cmd_arg_matches_app_id(&arg.to_string_lossy(), needle_cmd))
+        || process.environ().iter().any(|var| env_var_matches_app_id(&var.to_string_lossy(), app_id))
+}
+
+fn refreshed_system() -> System {
     let mut sys = System::new();
     // refresh_processes() (the convenience method) uses a default
     // ProcessRefreshKind that does NOT include cmd (only memory/cpu/disk/
@@ -74,19 +110,51 @@ pub(crate) fn is_app_id_running(app_id: &str) -> bool {
     // process existed, the cmdline matched, and yet "running: false").
     // refresh_processes_specifics with with_cmd(Always) is the right way
     // to ask for this data. A real regression already hit once, don't
-    // repeat it.
+    // repeat it. with_environ(Always) is the extra signal for Proton
+    // games (see env_var_matches_app_id above).
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::new().with_cmd(UpdateKind::Always),
+        ProcessRefreshKind::new()
+            .with_cmd(UpdateKind::Always)
+            .with_environ(UpdateKind::Always),
     );
+    sys
+}
 
-    sys.processes().values().any(|process| {
-        process
-            .cmd()
-            .iter()
-            .any(|arg| cmd_arg_matches_app_id(&arg.to_string_lossy(), &needle))
-    })
+// Same convention for identifying the right process that
+// main.py:_build_prep_cmd already uses in the undo's
+// "pkill -f AppId=<id>" - except here it's a READ, not a kill.
+// pub(crate) because session.rs (the autonomous-close watchdog) uses the
+// same check, without going through HTTP.
+pub(crate) fn is_app_id_running(app_id: &str) -> bool {
+    let app_id = &resolve_legacy_app_id(app_id);
+    let needle = format!("AppId={app_id}");
+    let sys = refreshed_system();
+    sys.processes().values().any(|process| matches_app_id(process, &needle, app_id))
+}
+
+// Kills every process currently matching app_id (same detection logic as
+// is_app_id_running, both signals) by sending `signal` directly via
+// sysinfo, instead of shelling out to `pkill -f AppId=<id>`. Real bug
+// found on-device: pkill only searches cmdline, so for a game whose ONLY
+// matching signal is the Proton compat-data env var (see
+// env_var_matches_app_id) - no live process has "AppId=<id>" in its own
+// cmdline - pkill silently killed nothing, `kill_game_process` burned the
+// full 20s grace period for no reason and then still failed (pkill exit
+// 1). Returns whether anything matched/was signaled.
+pub(crate) fn signal_app_id_processes(app_id: &str, signal: sysinfo::Signal) -> bool {
+    let app_id = &resolve_legacy_app_id(app_id);
+    let needle = format!("AppId={app_id}");
+    let sys = refreshed_system();
+    let mut matched_any = false;
+    for process in sys.processes().values() {
+        if matches_app_id(process, &needle, app_id) {
+            matched_any = true;
+            process.kill_with(signal);
+        }
+    }
+    matched_any
 }
 
 // "when a sync call is received" - fires the pulse BEFORE building the
@@ -169,6 +237,7 @@ pub fn app(
         .route("/system/shutdown", post(shutdown))
         .route("/session/register", post(register_session))
         .route("/session/close", post(close_session_now))
+        .route("/session/status", get(session_status))
         // Added BEFORE (so it ends up INNER relative to) the Extension
         // layers below: axum layers added later wrap ones added earlier,
         // so this middleware only runs once ClientsState/ClientsFilePath

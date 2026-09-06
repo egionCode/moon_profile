@@ -18,6 +18,19 @@ impl FakeGameProcess {
             .expect("failed to spawn fake process for the test");
         Self { child }
     }
+
+    // No "AppId=<id>" anywhere in its own cmdline (only the compat-data
+    // env var) - simulates the real Proton case that broke
+    // is_app_id_running/kill_game_process on-device: the actual game exe
+    // matches only via env_var_matches_app_id, not cmdline.
+    pub(crate) fn spawn_with_compatdata_env(app_id: &str) -> Self {
+        let child = std::process::Command::new("sleep")
+            .arg("30")
+            .env("STEAM_COMPAT_DATA_PATH", format!("/home/deck/.steam/steam/steamapps/compatdata/{app_id}"))
+            .spawn()
+            .expect("failed to spawn fake process for the test");
+        Self { child }
+    }
 }
 
 impl Drop for FakeGameProcess {

@@ -45,7 +45,9 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 use crate::apollo;
-use crate::server::{is_app_id_running, timestamp, EventNotifier, RunnerEvent};
+use sysinfo::Signal;
+
+use crate::server::{is_app_id_running, resolve_legacy_app_id, signal_app_id_processes, timestamp, EventNotifier, RunnerEvent};
 
 #[derive(Clone)]
 pub struct ActiveSession {
@@ -98,6 +100,27 @@ pub struct CloseResponse {
     error: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct SessionStatusResponse {
+    app_id: Option<String>,
+    running: bool,
+}
+
+// GET /session/status - read-only, for the Deck's Quick Access to show
+// "Game X is running" (see moon_profile_decky/main.py:get_session_status).
+// Reuses the same ActiveSession/is_app_id_running the watchdog already
+// relies on, doesn't touch SessionState.
+pub async fn session_status(Extension(state): Extension<SessionState>) -> Json<SessionStatusResponse> {
+    let session = state.lock().await.clone();
+    match session {
+        Some(s) => {
+            let running = is_app_id_running(&s.app_id);
+            Json(SessionStatusResponse { app_id: Some(s.app_id), running })
+        }
+        None => Json(SessionStatusResponse { app_id: None, running: false }),
+    }
+}
+
 // Runs a shell command (single string, same format Apollo used to use
 // in prep-cmd) - best-effort: a failure here is only logged, it doesn't
 // stop the following commands (e.g. kscreen-doctor trying to turn off
@@ -129,13 +152,26 @@ async fn run_shell_commands(commands: &[String]) {
 // Apollo's old undo array used to. Only sends SIGKILL if the whole
 // grace period passes without the process exiting on its own.
 async fn kill_game_process(app_id: &str) {
+    // Needs the same LEGACY 32-bit id is_app_id_running resolves to
+    // internally (see resolve_legacy_app_id) - non-Steam shortcuts are
+    // registered with the EXTENDED 64-bit GameID needed to launch via
+    // steam://rungameid/, but that's not what the running process's own
+    // "AppId=" cmdline argument carries.
+    let app_id = &resolve_legacy_app_id(app_id);
     if !is_app_id_running(app_id) {
         println!("[{}] [session] app_id={app_id} is already not running, nothing to kill", timestamp());
         return;
     }
 
+    // signal_app_id_processes signals directly via sysinfo (same
+    // cmdline-OR-env-var matching as is_app_id_running), instead of
+    // shelling out to `pkill -f AppId=<id>` - real bug found on-device:
+    // pkill only searches cmdline, so it silently killed nothing for a
+    // game whose only matching signal was the Proton compat-data env var
+    // (see env_var_matches_app_id in server.rs), burning the full grace
+    // period below for no reason.
     println!("[{}] [session] sending SIGTERM (AppId={app_id})", timestamp());
-    run_shell_command(&format!("pkill -TERM -f AppId={app_id}")).await;
+    signal_app_id_processes(app_id, Signal::Term);
 
     let grace_period = Duration::from_secs(20);
     let start = tokio::time::Instant::now();
@@ -145,7 +181,7 @@ async fn kill_game_process(app_id: &str) {
                 "[{}] [session] app_id={app_id} did not exit on its own within the grace period, forcing with SIGKILL",
                 timestamp()
             );
-            run_shell_command(&format!("pkill -KILL -f AppId={app_id}")).await;
+            signal_app_id_processes(app_id, Signal::Kill);
             return;
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
