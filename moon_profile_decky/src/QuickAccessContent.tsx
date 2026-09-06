@@ -1,9 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { PanelSection, PanelSectionRow, ButtonItem, Field, showModal, ConfirmModal } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { getProfiles, detectContext, stopStream, getHostStatus, shutdownHost, wakeHost } from "./api";
+import { FaBolt, FaGamepad, FaPlug, FaPowerOff, FaSyncAlt } from "react-icons/fa";
+import {
+  getProfiles,
+  detectContext,
+  stopStream,
+  getHostStatus,
+  getSessionStatus,
+  shutdownHost,
+  wakeHost,
+} from "./api";
 import { syncHostGames } from "./gameSync";
-import { HostStatus, Profile } from "./types";
+import { HostStatus, Profile, SessionStatus } from "./types";
 
 const HOST_STATUS_LABELS: Record<HostStatus, string> = {
   unconfigured: "Not configured",
@@ -55,6 +64,17 @@ interface SyncProgress {
 // <div> with a percentage width doesn't have that problem, it's guaranteed
 // by CSS and doesn't depend on the internal behavior (possibly buggy in
 // this context) of Steam's component.
+// Icon + label side by side - ButtonItem has no dedicated icon prop, this
+// is the standard decky pattern of putting both as children of a flex row.
+function ButtonLabel({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+      {icon}
+      {children}
+    </span>
+  );
+}
+
 function ProgressBar({ percent }: { percent: number }) {
   return (
     <div style={{ width: "100%", height: "4px", background: "rgba(255, 255, 255, 0.2)", borderRadius: "2px" }}>
@@ -78,6 +98,7 @@ export function QuickAccessContent() {
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [hostStatus, setHostStatus] = useState<HostStatus>("unconfigured");
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>({ running: false, app_id: null, name: null });
   const [powerBusy, setPowerBusy] = useState(false);
 
   useEffect(() => {
@@ -86,7 +107,10 @@ export function QuickAccessContent() {
   }, []);
 
   useEffect(() => {
-    const poll = () => getHostStatus().then(setHostStatus);
+    const poll = () => {
+      getHostStatus().then(setHostStatus);
+      getSessionStatus().then(setSessionStatus);
+    };
     poll();
     const interval = setInterval(poll, HOST_STATUS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
@@ -172,31 +196,28 @@ export function QuickAccessContent() {
     <>
       <PanelSection title="MoonProfile">
         <PanelSectionRow>
-          <Field label="Detected context">{context}</Field>
+          <Field label="Current context">{context}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
           <Field label="Host">
             <HostStatusIndicator status={hostStatus} />
           </Field>
         </PanelSectionRow>
+        {sessionStatus.running && (
+          <PanelSectionRow>
+            <Field label="Game" icon={<FaGamepad />}>
+              {`${sessionStatus.name ?? sessionStatus.app_id} is running`}
+            </Field>
+          </PanelSectionRow>
+        )}
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onClose} disabled={closing}>
-            {closing ? "Closing..." : "Close connection"}
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={onShutdown} disabled={powerBusy || hostStatus !== "online"}>
-            Turn off host
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={onWake} disabled={powerBusy || hostStatus !== "offline"}>
-            Wake host
+            <ButtonLabel icon={<FaPlug />}>{closing ? "Closing..." : "Close connection"}</ButtonLabel>
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onSyncGames} disabled={syncing}>
-            {syncing ? "Syncing..." : "Sync games from host"}
+            <ButtonLabel icon={<FaSyncAlt />}>{syncing ? "Syncing..." : "Sync games from host"}</ButtonLabel>
           </ButtonItem>
         </PanelSectionRow>
         {syncProgress && (
@@ -209,6 +230,16 @@ export function QuickAccessContent() {
             </PanelSectionRow>
           </>
         )}
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onShutdown} disabled={powerBusy || hostStatus !== "online"}>
+            <ButtonLabel icon={<FaPowerOff />}>Turn off host</ButtonLabel>
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onWake} disabled={powerBusy || hostStatus !== "offline"}>
+            <ButtonLabel icon={<FaBolt />}>Wake host</ButtonLabel>
+          </ButtonItem>
+        </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title="Profiles">

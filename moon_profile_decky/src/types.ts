@@ -131,3 +131,13 @@ export interface GameShortcutEntry {
 }
 
 export type GameShortcuts = Record<string, GameShortcutEntry>;
+
+// Read-only view of the Runner's ActiveSession (GET /session/status),
+// with the friendly name resolved from game_shortcuts.json on the Deck
+// side (the Runner only knows the app_id) - polled by
+// QuickAccessContent.tsx to show "Game X is running".
+export interface SessionStatus {
+  running: boolean;
+  app_id: string | null;
+  name: string | null;
+}

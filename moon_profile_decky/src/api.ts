@@ -8,6 +8,7 @@ import {
   ListGamesResult,
   OkResult,
   Profile,
+  SessionStatus,
   StreamResult,
 } from "./types";
 
@@ -34,6 +35,7 @@ export const getStreamingCollectionId = callable<[], string | null>("get_streami
 export const saveStreamingCollectionId = callable<[collection_id: string], void>("save_streaming_collection_id");
 
 export const getHostStatus = callable<[], HostStatus>("get_host_status");
+export const getSessionStatus = callable<[], SessionStatus>("get_session_status");
 export const fetchHostMac = callable<[], FetchHostMacResult>("fetch_host_mac");
 export const shutdownHost = callable<[], OkResult>("shutdown_host");
 export const wakeHost = callable<[], OkResult>("wake_host");
