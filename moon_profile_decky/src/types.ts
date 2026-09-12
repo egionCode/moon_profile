@@ -1,6 +1,39 @@
 export interface MoonlightConfig {
   bitrate: number; // in kbps, ex: 150000
   codec: "HEVC" | "AV1" | "H264";
+
+  // Advanced video: raw moonlight-qt CLI flags (see build_moonlight_flags
+  // in moonprofile_core.py), passthrough only, no interaction with the
+  // host's own display switch. All optional: undefined falls back to
+  // moonlight-qt's own default (documented per field, from
+  // streamingpreferences.cpp), so a profile saved before these fields
+  // existed keeps streaming unchanged until someone opens the editor.
+  // Plain bool in moonlight-qt, no multi-mode option - but only takes
+  // effect when vsync is also true (session.cpp gates it as
+  // "enableVsync && framePacing" before the decoder ever sees it).
+  frame_pacing?: boolean; // default: false
+  vsync?: boolean; // default: true
+  display_mode?: "fullscreen" | "windowed" | "borderless"; // default: "fullscreen"
+  video_decoder?: "auto" | "software" | "hardware"; // default: "auto"
+  yuv444?: boolean; // default: false
+  performance_overlay?: boolean; // default: false
+  keep_awake?: boolean; // default: true
+  game_optimization?: boolean; // default: true
+
+  // Input
+  absolute_mouse?: boolean; // default: false
+  mouse_buttons_swap?: boolean; // default: false
+  touchscreen_trackpad?: boolean; // default: false
+  multi_controller?: boolean; // default: true
+  background_gamepad?: boolean; // default: false
+  reverse_scroll_direction?: boolean; // default: false
+  swap_gamepad_buttons?: boolean; // default: false
+  capture_system_keys?: "never" | "fullscreen" | "always"; // default: "never"
+
+  // Audio
+  audio_config?: "stereo" | "5.1-surround" | "7.1-surround"; // default: "stereo"
+  audio_on_host?: boolean; // default: false
+  mute_on_focus_loss?: boolean; // default: false
 }
 
 export interface HostConfig {

@@ -59,6 +59,7 @@ from moonprofile_core import (  # noqa: E402 (import after sys.path.insert is in
     ApolloClient,
     CODEC_FLAGS,
     build_display_commands,
+    build_moonlight_flags,
     build_restore_commands,
     classify_apollo_error,
     detect_context,
@@ -234,6 +235,7 @@ def main() -> None:
         "--bitrate", str(moonlight_cfg["bitrate"]),
         "--video-codec", codec_flag,
         hdr_flag,
+        *build_moonlight_flags(moonlight_cfg),
     ]
 
     # execvp REPLACES this process with flatpak (same PID): important so

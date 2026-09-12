@@ -11,7 +11,7 @@ import {
 } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { listHostDisplays } from "./api";
-import { HostDisplay, HostDisplayMode, Profile } from "./types";
+import { HostDisplay, HostDisplayMode, MoonlightConfig, Profile } from "./types";
 
 // Same pattern as ProfileList.tsx: "ButtonItem"/"TextField" occupy the
 // whole row by themselves, which is why two side by side (Cancel/Save,
@@ -31,6 +31,30 @@ const CODEC_OPTIONS = [
   { data: "HEVC", label: "HEVC" },
   { data: "AV1", label: "AV1" },
   { data: "H264", label: "H264" },
+];
+
+const DISPLAY_MODE_OPTIONS = [
+  { data: "fullscreen", label: "Fullscreen" },
+  { data: "windowed", label: "Windowed" },
+  { data: "borderless", label: "Borderless" },
+];
+
+const VIDEO_DECODER_OPTIONS = [
+  { data: "auto", label: "Auto" },
+  { data: "hardware", label: "Hardware" },
+  { data: "software", label: "Software" },
+];
+
+const CAPTURE_SYSTEM_KEYS_OPTIONS = [
+  { data: "never", label: "Never" },
+  { data: "fullscreen", label: "Fullscreen only" },
+  { data: "always", label: "Always" },
+];
+
+const AUDIO_CONFIG_OPTIONS = [
+  { data: "stereo", label: "Stereo" },
+  { data: "5.1-surround", label: "5.1 surround" },
+  { data: "7.1-surround", label: "7.1 surround" },
 ];
 
 // ex: "3840x2160" - basic validation, just to catch typos before sending
@@ -166,6 +190,13 @@ export function ProfileEditor({ profile, isNew, onSave, onCancel }: ProfileEdito
     data: d.name,
     label: d.connected ? d.name : `${d.name} (disconnected)`,
   }));
+
+  // Shared by every field in "Advanced video"/"Input"/"Audio" below - all
+  // of them just patch one key of draft.moonlight, only the value type
+  // (boolean vs a choice's string) changes.
+  function setMoonlight<K extends keyof MoonlightConfig>(key: K, value: MoonlightConfig[K]) {
+    setDraft((prev) => ({ ...prev, moonlight: { ...prev.moonlight, [key]: value } }));
+  }
 
   const onSubmit = () => {
     if (!draft.name.trim()) {
@@ -378,6 +409,159 @@ export function ProfileEditor({ profile, isNew, onSave, onCancel }: ProfileEdito
             rgOptions={CODEC_OPTIONS}
             selectedOption={draft.moonlight.codec}
             onChange={(o) => setDraft({ ...draft, moonlight: { ...draft.moonlight, codec: o.data } })}
+          />
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title="Advanced video">
+        <PanelSectionRow>
+          <ToggleField
+            label="V-Sync"
+            checked={draft.moonlight.vsync ?? true}
+            onChange={(checked) => setMoonlight("vsync", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            // Just a bool in moonlight-qt (Q_PROPERTY(bool framePacing...)),
+            // no "latency/smoothness" modes - but it only has any effect
+            // with V-Sync on: session.cpp gates it as
+            // "enableVsync && m_Preferences->framePacing" before it ever
+            // reaches the decoder, same as the official GUI graying out
+            // this exact checkbox when V-Sync is off (SettingsView.qml).
+            label="Frame pacing (requires V-Sync)"
+            checked={(draft.moonlight.vsync ?? true) && (draft.moonlight.frame_pacing ?? false)}
+            disabled={!(draft.moonlight.vsync ?? true)}
+            onChange={(checked) => setMoonlight("frame_pacing", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DropdownItem
+            label="Display mode"
+            rgOptions={DISPLAY_MODE_OPTIONS}
+            selectedOption={draft.moonlight.display_mode ?? "fullscreen"}
+            onChange={(o) => setMoonlight("display_mode", o.data)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DropdownItem
+            label="Video decoder"
+            rgOptions={VIDEO_DECODER_OPTIONS}
+            selectedOption={draft.moonlight.video_decoder ?? "auto"}
+            onChange={(o) => setMoonlight("video_decoder", o.data)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="YUV 4:4:4 (if supported)"
+            checked={draft.moonlight.yuv444 ?? false}
+            onChange={(checked) => setMoonlight("yuv444", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Performance overlay"
+            checked={draft.moonlight.performance_overlay ?? false}
+            onChange={(checked) => setMoonlight("performance_overlay", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Keep display awake while streaming"
+            checked={draft.moonlight.keep_awake ?? true}
+            onChange={(checked) => setMoonlight("keep_awake", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Game optimizations"
+            checked={draft.moonlight.game_optimization ?? true}
+            onChange={(checked) => setMoonlight("game_optimization", checked)}
+          />
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title="Input">
+        <PanelSectionRow>
+          <ToggleField
+            label="Absolute mouse mode"
+            checked={draft.moonlight.absolute_mouse ?? false}
+            onChange={(checked) => setMoonlight("absolute_mouse", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Swap left/right mouse buttons"
+            checked={draft.moonlight.mouse_buttons_swap ?? false}
+            onChange={(checked) => setMoonlight("mouse_buttons_swap", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Touchscreen as trackpad"
+            checked={draft.moonlight.touchscreen_trackpad ?? false}
+            onChange={(checked) => setMoonlight("touchscreen_trackpad", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Multiple controller support"
+            checked={draft.moonlight.multi_controller ?? true}
+            onChange={(checked) => setMoonlight("multi_controller", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Background gamepad input"
+            checked={draft.moonlight.background_gamepad ?? false}
+            onChange={(checked) => setMoonlight("background_gamepad", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Reverse scroll direction"
+            checked={draft.moonlight.reverse_scroll_direction ?? false}
+            onChange={(checked) => setMoonlight("reverse_scroll_direction", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Swap A/B and X/Y (Nintendo-style)"
+            checked={draft.moonlight.swap_gamepad_buttons ?? false}
+            onChange={(checked) => setMoonlight("swap_gamepad_buttons", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DropdownItem
+            label="Capture system key combos"
+            rgOptions={CAPTURE_SYSTEM_KEYS_OPTIONS}
+            selectedOption={draft.moonlight.capture_system_keys ?? "never"}
+            onChange={(o) => setMoonlight("capture_system_keys", o.data)}
+          />
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title="Audio">
+        <PanelSectionRow>
+          <DropdownItem
+            label="Audio config"
+            rgOptions={AUDIO_CONFIG_OPTIONS}
+            selectedOption={draft.moonlight.audio_config ?? "stereo"}
+            onChange={(o) => setMoonlight("audio_config", o.data)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Play audio on host"
+            checked={draft.moonlight.audio_on_host ?? false}
+            onChange={(checked) => setMoonlight("audio_on_host", checked)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label="Mute when window loses focus"
+            checked={draft.moonlight.mute_on_focus_loss ?? false}
+            onChange={(checked) => setMoonlight("mute_on_focus_loss", checked)}
           />
         </PanelSectionRow>
       </PanelSection>

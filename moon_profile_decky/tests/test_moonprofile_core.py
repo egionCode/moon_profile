@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "py_modules"))
 from moonprofile_core import (
     build_display_commands,
     build_magic_packet,
+    build_moonlight_flags,
     build_restore_commands,
     classify_apollo_error,
     detect_context,
@@ -208,6 +209,42 @@ class TestBuildMagicPacket:
     def test_rejects_an_address_with_non_hex_parts(self):
         with pytest.raises(ValueError):
             build_magic_packet("zz:bb:cc:dd:ee:ff")
+
+
+class TestBuildMoonlightFlags:
+    def test_falls_back_to_moonlight_qts_own_defaults_when_config_is_empty(self):
+        # A profile saved before these fields existed (empty dict here)
+        # must stream exactly like a stock moonlight-qt install - see
+        # streamingpreferences.cpp for where each default came from.
+        flags = build_moonlight_flags({})
+
+        assert "--no-frame-pacing" in flags  # default: false
+        assert "--vsync" in flags  # default: true
+        assert "--no-yuv444" in flags
+        assert "--keep-awake" in flags  # default: true
+        assert "--game-optimization" in flags  # default: true
+        assert "--multi-controller" in flags  # default: true
+        assert ["--display-mode", "fullscreen"] == flags[flags.index("--display-mode"):][:2]
+        assert ["--video-decoder", "auto"] == flags[flags.index("--video-decoder"):][:2]
+        assert ["--capture-system-keys", "never"] == flags[flags.index("--capture-system-keys"):][:2]
+        assert ["--audio-config", "stereo"] == flags[flags.index("--audio-config"):][:2]
+
+    def test_honors_explicit_overrides(self):
+        moonlight_cfg = {
+            "frame_pacing": True,
+            "vsync": False,
+            "display_mode": "borderless",
+            "video_decoder": "hardware",
+            "audio_config": "7.1-surround",
+        }
+
+        flags = build_moonlight_flags(moonlight_cfg)
+
+        assert "--frame-pacing" in flags
+        assert "--no-vsync" in flags
+        assert ["--display-mode", "borderless"] == flags[flags.index("--display-mode"):][:2]
+        assert ["--video-decoder", "hardware"] == flags[flags.index("--video-decoder"):][:2]
+        assert ["--audio-config", "7.1-surround"] == flags[flags.index("--audio-config"):][:2]
 
 
 class TestClassifyApolloError:

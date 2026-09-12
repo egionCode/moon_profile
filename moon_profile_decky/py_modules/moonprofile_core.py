@@ -23,6 +23,90 @@ RUNNER_PORT = 47991
 # "H264" (no dot) but the CLI expects a literal "H.264".
 CODEC_FLAGS = {"HEVC": "HEVC", "AV1": "AV1", "H264": "H.264"}
 
+# moonlight-qt's addToggleOption() flags (always emitted as --name or
+# --no-name, see commandlineparser.cpp) exposed in the profile editor
+# under "Advanced video"/"Input"/"Audio", mapped to the CLI flag name and
+# to moonlight-qt's OWN default (from streamingpreferences.cpp) - used as
+# the fallback for profiles saved before these fields existed, and as the
+# UI's default (ProfileEditor.tsx), so a never-touched field streams
+# exactly like a stock moonlight-qt install.
+MOONLIGHT_TOGGLE_FLAGS = {
+    "frame_pacing": "frame-pacing",
+    "vsync": "vsync",
+    "yuv444": "yuv444",
+    "performance_overlay": "performance-overlay",
+    "keep_awake": "keep-awake",
+    "game_optimization": "game-optimization",
+    "absolute_mouse": "absolute-mouse",
+    "mouse_buttons_swap": "mouse-buttons-swap",
+    "touchscreen_trackpad": "touchscreen-trackpad",
+    "multi_controller": "multi-controller",
+    "background_gamepad": "background-gamepad",
+    "reverse_scroll_direction": "reverse-scroll-direction",
+    "swap_gamepad_buttons": "swap-gamepad-buttons",
+    "audio_on_host": "audio-on-host",
+    "mute_on_focus_loss": "mute-on-focus-loss",
+}
+
+MOONLIGHT_TOGGLE_DEFAULTS = {
+    "frame_pacing": False,
+    "vsync": True,
+    "yuv444": False,
+    "performance_overlay": False,
+    "keep_awake": True,
+    "game_optimization": True,
+    "absolute_mouse": False,
+    "mouse_buttons_swap": False,
+    "touchscreen_trackpad": False,
+    "multi_controller": True,
+    "background_gamepad": False,
+    "reverse_scroll_direction": False,
+    "swap_gamepad_buttons": False,
+    "audio_on_host": False,
+    "mute_on_focus_loss": False,
+}
+
+# moonlight-qt's addChoiceOption() flags (a single value, no dot-splitting
+# needed: our data model already uses the exact literals moonlight-qt's
+# CLI expects, see commandlineparser.cpp's m_WindowModeMap/m_AudioConfigMap/
+# m_VideoDecoderMap/m_CaptureSysKeysModeMap).
+MOONLIGHT_CHOICE_FLAGS = {
+    "display_mode": "display-mode",
+    "video_decoder": "video-decoder",
+    "capture_system_keys": "capture-system-keys",
+    "audio_config": "audio-config",
+}
+
+MOONLIGHT_CHOICE_DEFAULTS = {
+    "display_mode": "fullscreen",
+    "video_decoder": "auto",
+    "capture_system_keys": "never",
+    "audio_config": "stereo",
+}
+
+
+def build_moonlight_flags(moonlight_cfg: dict) -> list:
+    """
+    Builds the extra moonlight-qt CLI flags for the "Advanced video",
+    "Input" and "Audio" sections of the profile editor (ProfileEditor.tsx)
+    - kept separate from the base --resolution/--fps/--bitrate/
+    --video-codec/--hdr args (runner.py), which are the single-source-of-
+    truth fields shared with the host display switch, while these are pure
+    passthrough to moonlight-qt.
+
+    Every field falls back to moonlight-qt's OWN default when missing from
+    moonlight_cfg (profiles saved before these existed), so nothing changes
+    for them until the user actually opens the editor and touches one.
+    """
+    flags = []
+    for field, flag_name in MOONLIGHT_TOGGLE_FLAGS.items():
+        value = moonlight_cfg.get(field, MOONLIGHT_TOGGLE_DEFAULTS[field])
+        flags.append(f"--{flag_name}" if value else f"--no-{flag_name}")
+    for field, flag_name in MOONLIGHT_CHOICE_FLAGS.items():
+        value = moonlight_cfg.get(field, MOONLIGHT_CHOICE_DEFAULTS[field])
+        flags.extend([f"--{flag_name}", value])
+    return flags
+
 
 def detect_context(drm_path: str = "/sys/class/drm") -> str:
     """Returns 'docked' if any external display is connected, otherwise 'handheld'.
